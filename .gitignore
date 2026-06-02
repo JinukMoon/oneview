@@ -1,0 +1,22 @@
+# dependencies
+node_modules/
+
+# generated web bundles (run `node build.mjs` to regenerate)
+www/vendor/
+
+# Capacitor-synced copies (run `npx cap copy android` to regenerate)
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+
+# Android build outputs
+android/.gradle/
+android/build/
+android/app/build/
+android/capacitor-cordova-android-plugins/build/
+android/local.properties
+*.apk
+*.keystore
+
+# misc
+.DS_Store
+*.log

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="colorPrimary">@color/bg_elev</color>
+    <color name="colorPrimaryDark">@color/bg_dark</color>
+    <color name="colorAccent">#2f81f7</color>
+    <color name="bg_dark">#0d1117</color>
+    <color name="bg_elev">#161b22</color>
+</resources>

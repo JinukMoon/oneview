@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <title>OneView</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <div class="topbar">
+      <div class="title"><span class="brand">One</span>View</div>
+      <button id="btn-dark" class="iconbtn hidden" title="야간 반전">🌓</button>
+      <button id="btn-share" class="iconbtn hidden" title="공유">↗</button>
+      <button id="btn-open" class="iconbtn">＋</button>
+    </div>
+
+    <div id="viewer">
+      <div id="landing" class="center-screen">
+        <div class="logo">One<span class="v">View</span></div>
+        <div class="sub">PDF · 한글(HWP) · Word · Excel · PPT · 이미지<br>무엇이든 이 앱 하나로 바로 열어요.<br><br>카톡·메일에서 파일을 누르면<br>여기서 열립니다.</div>
+        <button id="btn-open2" class="bigbtn">파일 열기</button>
+        <div id="recent" class="recent-list"></div>
+      </div>
+
+      <div id="loading" class="center-screen hidden">
+        <div class="spinner"></div>
+        <div class="sub" id="loading-text">여는 중…</div>
+      </div>
+
+      <div id="forward" class="center-screen hidden">
+        <div class="card">
+          <div class="fname" id="fwd-name">문서</div>
+          <div class="ftype" id="fwd-type"></div>
+          <div class="sub" id="fwd-msg">이 형식은 다른 앱에서 더 잘 열려요.</div>
+          <button id="btn-forward" class="bigbtn">다른 앱으로 열기</button>
+        </div>
+      </div>
+
+      <div id="content" class="hidden"></div>
+    </div>
+  </div>
+
+  <div id="pageind" class="hidden"></div>
+
+  <div id="zoomctl" class="hidden">
+    <button id="zoom-out" aria-label="축소">−</button>
+    <span id="zoom-pct">100%</span>
+    <button id="zoom-in" aria-label="확대">+</button>
+    <button id="zoom-reset" aria-label="원래대로">⤢</button>
+  </div>
+
+  <div id="toast"></div>
+
+  <script src="vendor/app-bundle.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

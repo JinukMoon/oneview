@@ -1,0 +1,8 @@
+{
+  "appId": "com.oneview.app",
+  "appName": "OneView",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": true
+  }
+}
