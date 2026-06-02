@@ -3,7 +3,7 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import { Viewer as HWPViewer } from 'hwp.js';
 import { registerPlugin, Capacitor as CapCore } from '@capacitor/core';
-import mammoth from 'mammoth';
+import { renderAsync as docxRender } from 'docx-preview';
 import * as XLSX from 'xlsx';
 import { init as pptxInit } from 'pptx-preview';
 import { unzipSync } from 'fflate';
@@ -14,7 +14,7 @@ window.pdfjsLib = pdfjsLib;
 window.HWPViewer = HWPViewer;
 window.JVRegisterPlugin = registerPlugin;
 window.JVCapacitor = CapCore;
-window.mammoth = mammoth;
+window.docxRender = docxRender;
 window.XLSX = XLSX;
 window.pptxInit = pptxInit;
 window.JVUnzip = unzipSync;

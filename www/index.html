@@ -11,9 +11,18 @@
   <div id="app">
     <div class="topbar">
       <div class="title"><span class="brand">One</span>View</div>
+      <button id="btn-search" class="iconbtn hidden" title="검색">🔍</button>
       <button id="btn-dark" class="iconbtn hidden" title="야간 반전">🌓</button>
       <button id="btn-share" class="iconbtn hidden" title="공유">↗</button>
       <button id="btn-open" class="iconbtn">＋</button>
+    </div>
+
+    <div id="searchbar" class="hidden">
+      <input id="search-input" type="search" placeholder="문서에서 검색…" autocomplete="off" />
+      <span id="search-count"></span>
+      <button id="search-prev" class="sbtn" aria-label="이전">▲</button>
+      <button id="search-next" class="sbtn" aria-label="다음">▼</button>
+      <button id="search-close" class="sbtn" aria-label="닫기">✕</button>
     </div>
 
     <div id="viewer">

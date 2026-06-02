@@ -43,11 +43,13 @@
     toast: $('toast'),
     btnDark: $('btn-dark'),
     btnShare: $('btn-share'),
+    btnSearch: $('btn-search'),
     pageind: $('pageind'),
     recent: $('recent'),
   };
 
   let currentFile = null; // {name, path}
+  let currentExt = '';
 
   // --- zoom (content-only so the header stays fixed) ---
   const ZOOM_MIN = 0.25, ZOOM_MAX = 6;
@@ -83,6 +85,8 @@
     if (zoomctl) zoomctl.classList.toggle('hidden', !onContent);
     if (els.btnDark) els.btnDark.classList.toggle('hidden', !onContent);
     if (els.btnShare) els.btnShare.classList.toggle('hidden', !onContent);
+    if (els.btnSearch) els.btnSearch.classList.toggle('hidden', !onContent);
+    if (!onContent) closeSearch();
     if (els.pageind) els.pageind.classList.add('hidden'); // PDF re-shows it
     if (onContent) applyDarkReader();
     if (which === 'landing') { setTitle('OneView'); renderRecents(); }
@@ -161,6 +165,8 @@
     setLoading('여는 중…');
 
     const ext = extOf(file.name);
+    currentExt = ext;
+    closeSearch();
 
     if (ext === 'pdf') return renderPdf(file).catch((e) => fail('PDF', e, file));
     if (IMAGE_EXT.includes(ext)) return renderImage(file, ext).catch((e) => fail('이미지', e, file));
@@ -183,8 +189,14 @@
   }
 
   function fail(label, err, file) {
-    dbg('render failed: ' + label + ' ' + (err && (err.message || err)));
-    els.fwdMsg.textContent = label + ' 화면 표시에 실패했어요. 다른 앱으로 열어볼까요?';
+    const detail = err && (err.stack || err.message || String(err));
+    dbg('render failed: ' + label + ' ' + detail);
+    showErr(label + ' 렌더 실패:\n' + (detail ? String(detail).split('\n').slice(0, 4).join('\n') : '(no detail)'));
+    if (label === 'HWP') {
+      els.fwdMsg.textContent = '이 한글 파일은 앱에서 직접 표시가 안 돼요 (배포용·암호화 또는 이미지 포함 문서일 수 있어요). 한글 앱으로 열어볼까요?';
+    } else {
+      els.fwdMsg.textContent = label + ' 화면 표시에 실패했어요. 다른 앱으로 열어볼까요?';
+    }
     showForward(file);
   }
 
@@ -336,16 +348,20 @@
     show('content');
   }
 
-  // --- Word ---
+  // --- Word (docx-preview — preserves tables/styles/layout) ---
   async function renderDocx(file) {
     const data = await fetchBytes(file);
-    const result = await window.mammoth.convertToHtml({ arrayBuffer: data });
     els.content.innerHTML = '';
-    const page = document.createElement('div');
-    page.className = 'doc-view';
-    page.innerHTML = result.value || '<p>(빈 문서)</p>';
-    els.content.appendChild(page);
+    const wrap = document.createElement('div');
+    wrap.className = 'docx-wrap';
+    els.content.appendChild(wrap);
     show('content');
+    await window.docxRender(data, wrap, null, {
+      className: 'docx',
+      inWrapper: true,
+      breakPages: true,
+      useBase64URL: true,
+    });
   }
 
   // --- Excel ---
@@ -436,12 +452,84 @@
     } catch (e) { dbg(e); }
   }
 
+  // --- in-document search (Ctrl+F) — text-based views (Word/Excel/HWPX/text) ---
+  const searchBar = $('searchbar');
+  const searchInput = $('search-input');
+  const searchCount = $('search-count');
+  let matches = [], curMatch = -1, searchDebounce = null;
+
+  function clearHighlights() {
+    const marks = els.content.querySelectorAll('mark.jv-hl');
+    marks.forEach((m) => {
+      const t = document.createTextNode(m.textContent);
+      m.parentNode.replaceChild(t, m);
+    });
+    els.content.normalize();
+    matches = []; curMatch = -1;
+  }
+  function openSearch() {
+    if (els.content.classList.contains('hidden')) return;
+    if (searchBar) searchBar.classList.remove('hidden');
+    if (searchInput) { searchInput.focus(); searchInput.select(); }
+  }
+  function closeSearch() {
+    if (searchBar) searchBar.classList.add('hidden');
+    clearHighlights();
+    if (searchInput) searchInput.value = '';
+    if (searchCount) searchCount.textContent = '';
+  }
+  function runSearch(q) {
+    clearHighlights();
+    if (!q) { if (searchCount) searchCount.textContent = ''; return; }
+    if (currentExt === 'pdf') { if (searchCount) searchCount.textContent = 'PDF 미지원'; return; }
+    const ql = q.toLowerCase();
+    const walker = document.createTreeWalker(els.content, NodeFilter.SHOW_TEXT, {
+      acceptNode: (n) => (n.nodeValue && n.nodeValue.toLowerCase().includes(ql)
+        && n.parentNode && !/SCRIPT|STYLE/.test(n.parentNode.nodeName))
+        ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
+    });
+    const nodes = []; let nd;
+    while ((nd = walker.nextNode())) nodes.push(nd);
+    nodes.forEach((node) => {
+      const text = node.nodeValue, lower = text.toLowerCase();
+      const frag = document.createDocumentFragment();
+      let last = 0, idx = lower.indexOf(ql);
+      while (idx >= 0) {
+        if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+        const mark = document.createElement('mark');
+        mark.className = 'jv-hl';
+        mark.textContent = text.slice(idx, idx + q.length);
+        frag.appendChild(mark);
+        matches.push(mark);
+        last = idx + q.length;
+        idx = lower.indexOf(ql, last);
+      }
+      if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+      node.parentNode.replaceChild(frag, node);
+    });
+    if (matches.length) gotoMatch(0);
+    else if (searchCount) searchCount.textContent = '0';
+  }
+  function gotoMatch(i) {
+    if (!matches.length) return;
+    if (curMatch >= 0 && matches[curMatch]) matches[curMatch].classList.remove('jv-hl-cur');
+    curMatch = (i + matches.length) % matches.length;
+    const m = matches[curMatch];
+    m.classList.add('jv-hl-cur');
+    m.scrollIntoView({ block: 'center' });
+    if (searchCount) searchCount.textContent = (curMatch + 1) + '/' + matches.length;
+  }
+
   // --- wire up ---
   document.addEventListener('click', (e) => {
     const id = e.target.id;
     if (id === 'btn-open' || id === 'btn-open2') pickFile();
     else if (id === 'btn-forward' || id === 'ppt-open-ext') doForward();
     else if (id === 'btn-share') doShare();
+    else if (id === 'btn-search') openSearch();
+    else if (id === 'search-prev') gotoMatch(curMatch - 1);
+    else if (id === 'search-next') gotoMatch(curMatch + 1);
+    else if (id === 'search-close') closeSearch();
     else if (id === 'btn-dark') toggleDarkReader();
     else if (id === 'zoom-in') setZoom(zoom * 1.25);
     else if (id === 'zoom-out') setZoom(zoom / 1.25);
@@ -456,6 +544,17 @@
       }
     }
   });
+
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      clearTimeout(searchDebounce);
+      searchDebounce = setTimeout(() => runSearch(searchInput.value.trim()), 250);
+    });
+    searchInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { e.preventDefault(); gotoMatch(curMatch + (e.shiftKey ? -1 : 1)); }
+      else if (e.key === 'Escape') closeSearch();
+    });
+  }
 
   // pinch-to-zoom on content only
   const viewerEl = $('viewer');

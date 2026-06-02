@@ -20,3 +20,9 @@ android/local.properties
 # misc
 .DS_Store
 *.log
+
+# local test artifacts / private docs
+www/_hwp/
+www/_testfiles/
+www/rendertest.html
+/tmp/shot_*.png
