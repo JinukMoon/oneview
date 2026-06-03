@@ -422,6 +422,11 @@
       const holder = document.createElement('div');
       holder.style.overflowX = 'auto';
       holder.innerHTML = window.XLSX.utils.sheet_to_html(wb.Sheets[name], { editable: false });
+      // blank cells that show only a currency symbol with no number (empty-valued currency cells)
+      holder.querySelectorAll('td, th').forEach((c) => {
+        const t = c.textContent;
+        if (/[₩$€£¥]/.test(t) && !/\d/.test(t)) c.textContent = '';
+      });
       wrap.appendChild(holder);
     });
     els.content.appendChild(wrap);
