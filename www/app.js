@@ -372,6 +372,7 @@
           fixSvg(svg);
           en.target.innerHTML = '';
           en.target.appendChild(svg || holder);
+          en.target.style.height = 'auto'; // fit the real page height (pages vary), no clipping
         } catch (e) { en.target.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
       });
     }, { root: $('viewer'), rootMargin: '1200px 0px' });

@@ -82,7 +82,6 @@ html, body {
   background: #fff;
   box-shadow: 0 2px 12px rgba(0,0,0,0.5);
   max-width: 100%;
-  overflow: hidden;
 }
 .hwp-svg-page svg { width: 100%; height: auto; display: block; }
 
