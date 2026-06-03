@@ -51,6 +51,7 @@
 
   let currentFile = null; // {name, path}
   let currentExt = '';
+  let openSeq = 0; // generation token — guards against a slow render clobbering a newer one
 
   // --- zoom (content-only so the header stays fixed) ---
   const ZOOM_MIN = 0.25, ZOOM_MAX = 6;
@@ -164,9 +165,11 @@
   async function openFile(file) {
     dbg('openFile ' + JSON.stringify(file));
     if (!file || !file.path) { show('landing'); return; }
+    const myseq = ++openSeq;
     clearPdfObservers();
     if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; } // free previous HWP WASM doc
     currentFile = file;
+    if (FileBridge && FileBridge.setCurrent) FileBridge.setCurrent({ path: file.path, name: file.name }).catch(() => {});
     saveRecent(file);
     setZoom(1);
     setTitle(file.name);
@@ -188,6 +191,7 @@
     if (!ext) {
       try {
         const buf = await fetchBytes(file, 16);
+        if (myseq !== openSeq) return;
         const kind = detectByMagic(new Uint8Array(buf));
         if (kind === 'pdf') return renderPdf(file).catch((e) => fail('PDF', e, file));
         if (kind === 'image') return renderImage(file, 'png').catch((e) => fail('이미지', e, file));
@@ -220,6 +224,7 @@
 
   // --- PDF (lazy page rendering + page indicator) ---
   async function renderPdf(file) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
     const pdfjsLib = window.pdfjsLib;
     const pdf = await pdfjsLib.getDocument({
@@ -229,6 +234,7 @@
       cMapPacked: true,
       standardFontDataUrl: 'vendor/standard_fonts/',
     }).promise;
+    if (seq !== openSeq) return;
 
     const container = els.content;
     container.innerHTML = '';
@@ -297,7 +303,9 @@
 
   // --- Image ---
   async function renderImage(file, ext) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' ? 'image/jpeg' : 'image/' + ext;
     const blob = new Blob([data], { type: mime });
     const url = URL.createObjectURL(blob);
@@ -312,12 +320,15 @@
 
   // --- HWP / HWPX (via @rhwp/core WASM — full vector SVG render) ---
   let rhwpReady = false;
+  let rhwpInitPromise = null;
   let rhwpDoc = null; // current HWP document (WASM) — freed before opening another
   async function ensureRhwp() {
     if (rhwpReady) return;
-    setLoading('한글 엔진 로딩…');
-    await window.rhwpInit('vendor/rhwp_bg.wasm');
-    rhwpReady = true;
+    if (!rhwpInitPromise) {
+      setLoading('한글 엔진 로딩…');
+      rhwpInitPromise = window.rhwpInit('vendor/rhwp_bg.wasm').then(() => { rhwpReady = true; });
+    }
+    await rhwpInitPromise;
   }
   function fixSvg(svgEl) {
     if (!svgEl) return;
@@ -334,8 +345,11 @@
     svgEl.style.display = 'block';
   }
   async function renderHwp(file) {
+    const seq = openSeq;
     await ensureRhwp();
+    if (seq !== openSeq) return;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     const doc = new window.RhwpDocument(new Uint8Array(data));
     rhwpDoc = doc; // track for cleanup on next open
     const total = doc.pageCount();
@@ -401,7 +415,9 @@
 
   // --- Word (docx-preview — preserves tables/styles/layout) ---
   async function renderDocx(file) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     els.content.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'docx-wrap';
@@ -417,7 +433,9 @@
 
   // --- Excel ---
   async function renderXlsx(file) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     const wb = window.XLSX.read(new Uint8Array(data), { type: 'array' });
     els.content.innerHTML = '';
     const wrap = document.createElement('div');
@@ -442,8 +460,16 @@
   }
 
   // --- PowerPoint (static preview + handoff to PowerPoint) ---
+  const PPTX_MAX_BYTES = 60 * 1024 * 1024; // very large decks OOM pptx-preview → hand off instead
   async function renderPptx(file) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
+    if (data.byteLength > PPTX_MAX_BYTES) {
+      els.fwdMsg.textContent = '용량이 큰 PPT예요 (' + Math.round(data.byteLength / 1048576) + 'MB). 앱에서 열면 느려서, PowerPoint로 여는 걸 권해요.';
+      showForward(file);
+      return;
+    }
     els.content.innerHTML = '';
     const host = document.createElement('div');
     host.id = 'pptx-wrapper';
@@ -457,7 +483,9 @@
 
   // --- Text ---
   async function renderText(file) {
+    const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     let text;
     try {
       text = new TextDecoder('utf-8', { fatal: false }).decode(data);

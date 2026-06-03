@@ -77,6 +77,22 @@ public class FileBridge extends Plugin {
     }
 
     @PluginMethod
+    public void setCurrent(PluginCall call) {
+        // Sync the native "current file" with whatever JS is showing (e.g. a recent-files reopen
+        // that bypassed the intent path), so share/openExternally act on the right file.
+        String path = call.getString("path");
+        if (path != null) {
+            File f = new File(path);
+            if (f.exists()) {
+                lastCachedFile = f;
+                String name = call.getString("name");
+                lastName = (name != null && !name.isEmpty()) ? name : f.getName();
+            }
+        }
+        call.resolve();
+    }
+
+    @PluginMethod
     public void openExternally(PluginCall call) {
         if (lastCachedFile == null) {
             call.reject("no file to forward");
