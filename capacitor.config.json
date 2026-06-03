@@ -3,6 +3,6 @@
   "appName": "OneView",
   "webDir": "www",
   "android": {
-    "allowMixedContent": true
+    "allowMixedContent": false
   }
 }

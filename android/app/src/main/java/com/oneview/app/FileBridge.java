@@ -24,9 +24,9 @@ import java.io.OutputStream;
 @CapacitorPlugin(name = "FileBridge")
 public class FileBridge extends Plugin {
 
-    private File lastCachedFile = null;
-    private String lastName = null;
-    private String lastError = null;
+    private volatile File lastCachedFile = null;
+    private volatile String lastName = null;
+    private volatile String lastError = null;
 
     /** Called from MainActivity when an incoming VIEW/SEND intent carries a file. */
     public void handleIncomingUri(Uri uri, boolean emit) {
@@ -81,15 +81,21 @@ public class FileBridge extends Plugin {
         // Sync the native "current file" with whatever JS is showing (e.g. a recent-files reopen
         // that bypassed the intent path), so share/openExternally act on the right file.
         String path = call.getString("path");
-        if (path != null) {
+        JSObject ret = new JSObject();
+        if (path != null && new File(path).exists()) {
             File f = new File(path);
-            if (f.exists()) {
-                lastCachedFile = f;
-                String name = call.getString("name");
-                lastName = (name != null && !name.isEmpty()) ? name : f.getName();
-            }
+            lastCachedFile = f;
+            String name = call.getString("name");
+            lastName = (name != null && !name.isEmpty()) ? name : f.getName();
+            ret.put("exists", true);
+        } else {
+            // path gone (e.g. evicted cache from a recent-files reopen) — clear so we never
+            // forward/share a stale, wrong file
+            lastCachedFile = null;
+            lastName = null;
+            ret.put("exists", false);
         }
-        call.resolve();
+        call.resolve(ret);
     }
 
     @PluginMethod
@@ -198,9 +204,12 @@ public class FileBridge extends Plugin {
     }
 
     private File copyToCache(Uri uri, String name) throws Exception {
-        File dir = new File(getContext().getCacheDir(), "incoming");
+        // unique per-copy subdir → no collision when two files share a display name
+        File dir = new File(getContext().getCacheDir(), "incoming/" + System.nanoTime());
         if (!dir.exists()) dir.mkdirs();
-        String safe = name.replaceAll("[\\\\/:*?\"<>|]", "_");
+        // keep only URL-safe chars (letters incl. Korean, digits, . _ -) so convertFileSrc/fetch works
+        String safe = name.replaceAll("[^\\p{L}\\p{N}._-]", "_");
+        if (safe.isEmpty() || safe.equals(".") || safe.equals("..")) safe = "document";
         File out = new File(dir, safe);
         try (InputStream in = getContext().getContentResolver().openInputStream(uri);
              OutputStream os = new FileOutputStream(out)) {

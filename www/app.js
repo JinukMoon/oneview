@@ -143,6 +143,17 @@
   function escapeHtml(s) {
     return (s || '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   }
+  // strip active content from HTML generated off untrusted document data
+  function sanitizeNode(root) {
+    root.querySelectorAll('script, iframe, object, embed, link, meta, base').forEach((e) => e.remove());
+    root.querySelectorAll('*').forEach((el) => {
+      Array.from(el.attributes).forEach((a) => {
+        const n = a.name.toLowerCase();
+        if (n.startsWith('on')) el.removeAttribute(a.name);
+        else if ((n === 'href' || n === 'src' || n === 'xlink:href') && /^\s*(javascript|data):/i.test(a.value)) el.removeAttribute(a.name);
+      });
+    });
+  }
   const IMAGE_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg', 'heic', 'heif'];
   const TEXT_EXT = ['txt', 'csv', 'log', 'md', 'json', 'xml', 'html', 'htm', 'js', 'css', 'py', 'c', 'cpp', 'java', 'ini', 'yaml', 'yml', 'tsv'];
 
@@ -154,8 +165,15 @@
     return null;
   }
 
-  // --- lazy-render bookkeeping (PDF) ---
+  // --- lazy-render bookkeeping + resource cleanup ---
   let pdfObservers = [];
+  let pdfDoc = null;       // current PDFDocumentProxy — destroyed before next open
+  let curBlobUrl = null;   // current image blob URL — revoked before next open
+  function freeResources() {
+    if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
+    if (curBlobUrl) { try { URL.revokeObjectURL(curBlobUrl); } catch (e) {} curBlobUrl = null; }
+    if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; }
+  }
   function clearPdfObservers() {
     pdfObservers.forEach((o) => { try { o.disconnect(); } catch (e) {} });
     pdfObservers = [];
@@ -167,7 +185,7 @@
     if (!file || !file.path) { show('landing'); return; }
     const myseq = ++openSeq;
     clearPdfObservers();
-    if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; } // free previous HWP WASM doc
+    freeResources(); // destroy previous PDF doc, revoke image blob, free HWP WASM doc
     currentFile = file;
     if (FileBridge && FileBridge.setCurrent) FileBridge.setCurrent({ path: file.path, name: file.name }).catch(() => {});
     saveRecent(file);
@@ -234,7 +252,8 @@
       cMapPacked: true,
       standardFontDataUrl: 'vendor/standard_fonts/',
     }).promise;
-    if (seq !== openSeq) return;
+    if (seq !== openSeq) { try { pdf.destroy(); } catch (e) {} return; }
+    pdfDoc = pdf;
 
     const container = els.content;
     container.innerHTML = '';
@@ -245,6 +264,7 @@
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const page1 = await pdf.getPage(1);
+    if (seq !== openSeq) return;
     const vp1 = page1.getViewport({ scale: 1 });
     const scale = (cssWidth - 20) / vp1.width;
     const phW = Math.floor(vp1.width * scale);
@@ -252,8 +272,10 @@
 
     const rendered = new Set();
     async function renderPage(n, ph) {
+      if (seq !== openSeq) return;
       try {
         const page = n === 1 ? page1 : await pdf.getPage(n);
+        if (seq !== openSeq) return;
         const vp = page.getViewport({ scale: scale * dpr });
         const canvas = document.createElement('canvas');
         canvas.className = 'pdf-page';
@@ -269,12 +291,17 @@
 
     const lazyObs = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
+        const n = +en.target.dataset.page;
         if (en.isIntersecting) {
-          const n = +en.target.dataset.page;
           if (!rendered.has(n)) { rendered.add(n); renderPage(n, en.target); }
+        } else if (rendered.has(n)) {
+          // evict offscreen page to cap memory on long documents
+          en.target.style.height = en.target.offsetHeight + 'px';
+          en.target.innerHTML = '';
+          rendered.delete(n);
         }
       });
-    }, { root: $('viewer'), rootMargin: '800px 0px' });
+    }, { root: $('viewer'), rootMargin: '1500px 0px' });
 
     const curObs = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
@@ -309,6 +336,7 @@
     const mime = ext === 'svg' ? 'image/svg+xml' : ext === 'jpg' ? 'image/jpeg' : 'image/' + ext;
     const blob = new Blob([data], { type: mime });
     const url = URL.createObjectURL(blob);
+    curBlobUrl = url; // revoked on next open
     els.content.innerHTML = '';
     const img = document.createElement('img');
     img.className = 'img-view';
@@ -378,21 +406,27 @@
     const rendered = new Set();
     const lazy = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
-        if (!en.isIntersecting) return;
         const n = +en.target.dataset.page;
-        if (rendered.has(n)) return;
-        rendered.add(n);
-        try {
-          const holder = document.createElement('div');
-          holder.innerHTML = doc.renderPageSvg(n);
-          const svg = holder.querySelector('svg');
-          fixSvg(svg);
+        if (en.isIntersecting) {
+          if (rendered.has(n)) return;
+          rendered.add(n);
+          try {
+            const holder = document.createElement('div');
+            holder.innerHTML = doc.renderPageSvg(n);
+            const svg = holder.querySelector('svg');
+            fixSvg(svg);
+            en.target.innerHTML = '';
+            en.target.appendChild(svg || holder);
+            en.target.style.height = 'auto'; // fit the real page height (pages vary), no clipping
+          } catch (e) { en.target.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+        } else if (rendered.has(n)) {
+          // evict offscreen page (freeze height first to avoid scroll jump) to cap memory
+          en.target.style.height = en.target.offsetHeight + 'px';
           en.target.innerHTML = '';
-          en.target.appendChild(svg || holder);
-          en.target.style.height = 'auto'; // fit the real page height (pages vary), no clipping
-        } catch (e) { en.target.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+          rendered.delete(n);
+        }
       });
-    }, { root: $('viewer'), rootMargin: '1200px 0px' });
+    }, { root: $('viewer'), rootMargin: '1500px 0px' });
     const curObs = new IntersectionObserver((entries) => {
       entries.forEach((en) => { if (en.isIntersecting && els.pageind) els.pageind.textContent = (+en.target.dataset.page + 1) + ' / ' + total; });
     }, { root: $('viewer'), threshold: 0.5 });
@@ -477,6 +511,7 @@
       const holder = document.createElement('div');
       holder.style.overflowX = 'auto';
       holder.innerHTML = window.XLSX.utils.sheet_to_html(wb.Sheets[name], { editable: false });
+      sanitizeNode(holder);
       // blank cells that show only a currency symbol with no number (empty-valued currency cells)
       holder.querySelectorAll('td, th').forEach((c) => {
         const t = c.textContent;
