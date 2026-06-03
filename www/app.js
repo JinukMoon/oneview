@@ -429,6 +429,35 @@
       breakPages: true,
       useBase64URL: true,
     });
+    if (seq !== openSeq) return;
+    mergeBorderedParas(wrap);
+  }
+
+  // docx-preview draws a border around EACH paragraph; Word merges consecutive
+  // same-border paragraphs into one box. Merge them by dropping the inner edges.
+  function borderSig(p) {
+    const s = p.style;
+    if (s && s.borderStyle && s.borderStyle !== 'none' && s.borderWidth) {
+      return s.borderWidth + '|' + s.borderStyle + '|' + s.borderColor;
+    }
+    return null;
+  }
+  function mergeBorderedParas(root) {
+    const ps = Array.from(root.querySelectorAll('p'));
+    let i = 0;
+    while (i < ps.length) {
+      const sig = borderSig(ps[i]);
+      if (!sig) { i++; continue; }
+      let j = i;
+      while (j + 1 < ps.length && ps[j + 1].previousElementSibling === ps[j] && borderSig(ps[j + 1]) === sig) j++;
+      if (j > i) {
+        for (let k = i; k <= j; k++) {
+          if (k > i) { ps[k].style.borderTop = 'none'; ps[k].style.marginTop = '0'; }
+          if (k < j) { ps[k].style.borderBottom = 'none'; ps[k].style.marginBottom = '0'; }
+        }
+      }
+      i = j + 1;
+    }
   }
 
   // --- Excel ---
