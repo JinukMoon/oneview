@@ -6,7 +6,8 @@ import { registerPlugin, Capacitor as CapCore } from '@capacitor/core';
 import { renderAsync as docxRender } from 'docx-preview';
 import * as XLSX from 'xlsx';
 import { init as pptxInit } from 'pptx-preview';
-import { unzipSync } from 'fflate';
+import { unzipSync, zipSync } from 'fflate';
+import ExcelJS from 'exceljs';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.js';
 
@@ -19,3 +20,5 @@ window.docxRender = docxRender;
 window.XLSX = XLSX;
 window.pptxInit = pptxInit;
 window.JVUnzip = unzipSync;
+window.JVZip = zipSync;
+window.ExcelJS = ExcelJS;

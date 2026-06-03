@@ -13,7 +13,7 @@ await esbuild.build({
   format: 'iife',
   platform: 'browser',
   outfile: path.join(__dirname, 'www', 'vendor', 'app-bundle.js'),
-  alias: { fs: emptyShim },
+  alias: { fs: emptyShim, stream: emptyShim, 'readable-stream': emptyShim },
   loader: { '.wasm': 'file' },
   assetNames: '[name]',
   legalComments: 'none',

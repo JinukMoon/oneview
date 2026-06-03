@@ -495,28 +495,130 @@
   }
 
   // --- Excel ---
+  // ---- Excel styled rendering (ExcelJS) ----
+  function numToCol(n) { let s = ''; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; }
+  function colToNum(s) { let n = 0; for (const ch of s) n = n * 26 + (ch.charCodeAt(0) - 64); return n; }
+  function parseRange(r) {
+    const p = r.split(':'); const ma = /([A-Z]+)(\d+)/.exec(p[0]); const mb = /([A-Z]+)(\d+)/.exec(p[1]);
+    return { c1: colToNum(ma[1]), r1: +ma[2], c2: colToNum(mb[1]), r2: +mb[2] };
+  }
+  function argbCss(c) { if (c && c.argb && /^[0-9A-Fa-f]{8}$/.test(c.argb)) return '#' + c.argb.slice(2); return null; }
+  function fixReservedSheetNames(u8) {
+    try {
+      const zip = window.JVUnzip(u8); const key = 'xl/workbook.xml';
+      if (zip[key]) {
+        let xml = new TextDecoder().decode(zip[key]);
+        if (/name="History"/.test(xml)) {
+          xml = xml.replace(/(<sheet [^>]*name=")History(")/g, '$1History $2');
+          zip[key] = new TextEncoder().encode(xml);
+          return window.JVZip(zip);
+        }
+      }
+    } catch (e) {}
+    return u8;
+  }
+  function renderExcelSheet(ws) {
+    const merges = (ws.model && ws.model.merges ? ws.model.merges : []).map(parseRange);
+    const span = {}; const covered = new Set();
+    merges.forEach((m) => {
+      span[m.r1 + ':' + m.c1] = { cs: m.c2 - m.c1 + 1, rs: m.r2 - m.r1 + 1 };
+      for (let r = m.r1; r <= m.r2; r++) for (let c = m.c1; c <= m.c2; c++) if (!(r === m.r1 && c === m.c1)) covered.add(r + ':' + c);
+    });
+    const maxCol = ws.actualColumnCount || ws.columnCount || 1;
+    const maxRow = ws.actualRowCount || ws.rowCount || 1;
+    const table = document.createElement('table');
+    table.className = 'xlsx-table';
+    const cg = document.createElement('colgroup');
+    const corner = document.createElement('col'); corner.style.width = '40px'; cg.appendChild(corner);
+    for (let c = 1; c <= maxCol; c++) {
+      const col = document.createElement('col');
+      const w = ws.getColumn(c).width;
+      col.style.width = (w ? Math.round(w * 7 + 5) : 64) + 'px';
+      cg.appendChild(col);
+    }
+    table.appendChild(cg);
+    const head = document.createElement('tr'); head.className = 'xlsx-head';
+    const corner2 = document.createElement('th'); corner2.className = 'xlsx-corner'; head.appendChild(corner2);
+    for (let c = 1; c <= maxCol; c++) { const th = document.createElement('th'); th.className = 'xlsx-colh'; th.textContent = numToCol(c); head.appendChild(th); }
+    table.appendChild(head);
+    for (let r = 1; r <= maxRow; r++) {
+      const tr = document.createElement('tr');
+      const rownum = document.createElement('th'); rownum.className = 'xlsx-rowh'; rownum.textContent = r; tr.appendChild(rownum);
+      const row = ws.getRow(r);
+      if (row.height) tr.style.height = Math.round(row.height * 1.33) + 'px';
+      for (let c = 1; c <= maxCol; c++) {
+        if (covered.has(r + ':' + c)) continue;
+        const cell = row.getCell(c);
+        const td = document.createElement('td');
+        const sp = span[r + ':' + c]; if (sp) { if (sp.cs > 1) td.colSpan = sp.cs; if (sp.rs > 1) td.rowSpan = sp.rs; }
+        const st = cell.style || {};
+        let txt = (cell.text != null ? String(cell.text) : '');
+        const nf = cell.numFmt || st.numFmt;
+        if (typeof cell.value === 'number' && nf) {
+          try { const f = window.XLSX.SSF.format(nf, cell.value); if (f != null) txt = String(f); } catch (e) {}
+        }
+        td.textContent = txt;
+        if (st.fill && st.fill.type === 'pattern') { const fg = argbCss(st.fill.fgColor); if (fg) td.style.background = fg; }
+        if (st.font) {
+          if (st.font.bold) td.style.fontWeight = 'bold';
+          if (st.font.italic) td.style.fontStyle = 'italic';
+          const fc = argbCss(st.font.color); if (fc) td.style.color = fc;
+          if (st.font.size) td.style.fontSize = st.font.size + 'pt';
+        }
+        const al = st.alignment || {};
+        if (al.horizontal) td.style.textAlign = al.horizontal;
+        else if (typeof cell.value === 'number') td.style.textAlign = 'right';
+        if (al.vertical) td.style.verticalAlign = al.vertical === 'middle' ? 'middle' : al.vertical;
+        if (al.wrapText) td.style.whiteSpace = 'normal';
+        const b = st.border || {};
+        [['top', 'Top'], ['bottom', 'Bottom'], ['left', 'Left'], ['right', 'Right']].forEach((p) => {
+          if (b[p[0]] && b[p[0]].style) td.style['border' + p[1]] = '1px solid ' + (argbCss(b[p[0]].color) || '#9aa');
+        });
+        tr.appendChild(td);
+      }
+      table.appendChild(tr);
+    }
+    return table;
+  }
+
   async function renderXlsx(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
     if (seq !== openSeq) return;
+    const ext = extOf(file.name);
+    if (ext !== 'xls' && window.ExcelJS) {
+      try {
+        const fixed = fixReservedSheetNames(new Uint8Array(data));
+        const wb = new window.ExcelJS.Workbook();
+        await wb.xlsx.load(fixed);
+        if (seq !== openSeq) return;
+        els.content.innerHTML = '';
+        const wrap = document.createElement('div');
+        wrap.className = 'sheet-view';
+        wb.worksheets.forEach((ws) => {
+          const tab = document.createElement('div'); tab.className = 'sheet-tab'; tab.textContent = ws.name.trim();
+          wrap.appendChild(tab);
+          const holder = document.createElement('div'); holder.style.overflowX = 'auto';
+          holder.appendChild(renderExcelSheet(ws));
+          wrap.appendChild(holder);
+        });
+        els.content.appendChild(wrap);
+        show('content');
+        return;
+      } catch (e) { dbg('ExcelJS failed, fallback to SheetJS: ' + (e && e.message)); }
+    }
+    // fallback: SheetJS plain table (also handles .xls)
     const wb = window.XLSX.read(new Uint8Array(data), { type: 'array' });
     els.content.innerHTML = '';
     const wrap = document.createElement('div');
     wrap.className = 'sheet-view';
     wb.SheetNames.forEach((name) => {
-      const tab = document.createElement('div');
-      tab.className = 'sheet-tab';
-      tab.textContent = name;
+      const tab = document.createElement('div'); tab.className = 'sheet-tab'; tab.textContent = name;
       wrap.appendChild(tab);
-      const holder = document.createElement('div');
-      holder.style.overflowX = 'auto';
+      const holder = document.createElement('div'); holder.style.overflowX = 'auto';
       holder.innerHTML = window.XLSX.utils.sheet_to_html(wb.Sheets[name], { editable: false });
       sanitizeNode(holder);
-      // blank cells that show only a currency symbol with no number (empty-valued currency cells)
-      holder.querySelectorAll('td, th').forEach((c) => {
-        const t = c.textContent;
-        if (/[₩$€£¥]/.test(t) && !/\d/.test(t)) c.textContent = '';
-      });
+      holder.querySelectorAll('td, th').forEach((c) => { const t = c.textContent; if (/[₩$€£¥]/.test(t) && !/\d/.test(t)) c.textContent = ''; });
       wrap.appendChild(holder);
     });
     els.content.appendChild(wrap);
