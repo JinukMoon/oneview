@@ -46,6 +46,7 @@
     btnSearch: $('btn-search'),
     pageind: $('pageind'),
     recent: $('recent'),
+    actionbar: $('actionbar'),
   };
 
   let currentFile = null; // {name, path}
@@ -86,6 +87,7 @@
     if (els.btnDark) els.btnDark.classList.toggle('hidden', !onContent);
     if (els.btnShare) els.btnShare.classList.toggle('hidden', !onContent);
     if (els.btnSearch) els.btnSearch.classList.toggle('hidden', !onContent);
+    if (els.actionbar) els.actionbar.classList.add('hidden'); // renderers re-show as needed
     if (!onContent) closeSearch();
     if (els.pageind) els.pageind.classList.add('hidden'); // PDF re-shows it
     if (onContent) applyDarkReader();
@@ -103,6 +105,11 @@
     toastTimer = setTimeout(() => els.toast.classList.remove('show'), 2200);
   }
   function setTitle(name) { els.title.textContent = name || 'OneView'; }
+  function showActionBar(html) {
+    if (!els.actionbar) return;
+    els.actionbar.innerHTML = html;
+    els.actionbar.classList.remove('hidden');
+  }
 
   // --- recents ---
   function loadRecents() {
@@ -331,11 +338,8 @@
     const total = doc.pageCount();
     const container = els.content;
     container.innerHTML = '';
-    const bar = document.createElement('div');
-    bar.className = 'ppt-bar';
-    bar.innerHTML = '<button class="iconbtn" id="ppt-open-ext">다른 앱으로 열기 (한컴 등)</button>';
-    container.appendChild(bar);
     show('content');
+    showActionBar('<button class="iconbtn" id="ppt-open-ext">다른 앱으로 열기 (한컴 등)</button>');
 
     // estimate page aspect ratio from page 0 for placeholders
     const probe = document.createElement('div');
@@ -437,14 +441,11 @@
   async function renderPptx(file) {
     const data = await fetchBytes(file);
     els.content.innerHTML = '';
-    const bar = document.createElement('div');
-    bar.className = 'ppt-bar';
-    bar.innerHTML = '<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>';
-    els.content.appendChild(bar);
     const host = document.createElement('div');
     host.id = 'pptx-wrapper';
     els.content.appendChild(host);
     show('content');
+    showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>');
     const w = Math.min(els.content.clientWidth || window.innerWidth, 1280) - 8;
     const previewer = window.pptxInit(host, { width: w, height: Math.round((w * 9) / 16) });
     await previewer.preview(data);

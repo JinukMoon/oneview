@@ -86,6 +86,23 @@ html, body {
 }
 .hwp-svg-page svg { width: 100%; height: auto; display: block; }
 
+/* fixed action bar (HWP/PPT "open in another app") — outside #content so it never zooms */
+#actionbar {
+  padding: 8px 10px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  text-align: center;
+  flex-shrink: 0;
+}
+#actionbar .iconbtn {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+  font-weight: 600;
+  width: 100%;
+  max-width: 480px;
+}
+
 /* dark reader — invert document colours for night reading */
 #content.dark-reader { filter: invert(1) hue-rotate(180deg); }
 
