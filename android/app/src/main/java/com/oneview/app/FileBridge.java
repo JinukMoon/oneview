@@ -163,11 +163,6 @@ public class FileBridge extends Plugin {
 
     // ---- helpers ----
 
-    private boolean isViewAction(Intent i) {
-        String a = i.getAction();
-        return Intent.ACTION_VIEW.equals(a) || Intent.ACTION_SEND.equals(a);
-    }
-
     private String queryName(Uri uri) {
         String name = null;
         try (Cursor c = getContext().getContentResolver().query(uri, null, null, null, null)) {

@@ -24,12 +24,16 @@ public class MainActivity extends BridgeActivity {
             try { target = intent.getParcelableExtra(Intent.EXTRA_STREAM); } catch (Exception ignored) {}
         }
         if (target != null) {
-            try {
-                PluginHandle handle = getBridge().getPlugin("FileBridge");
-                if (handle != null && handle.getInstance() instanceof FileBridge) {
-                    ((FileBridge) handle.getInstance()).handleIncomingUri(target, true);
-                }
-            } catch (Exception ignored) {}
+            final android.net.Uri t = target;
+            // copy off the main thread to avoid ANR on large files
+            new Thread(() -> {
+                try {
+                    PluginHandle handle = getBridge().getPlugin("FileBridge");
+                    if (handle != null && handle.getInstance() instanceof FileBridge) {
+                        ((FileBridge) handle.getInstance()).handleIncomingUri(t, true);
+                    }
+                } catch (Exception ignored) {}
+            }).start();
         }
     }
 }

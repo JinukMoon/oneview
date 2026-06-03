@@ -165,6 +165,7 @@
     dbg('openFile ' + JSON.stringify(file));
     if (!file || !file.path) { show('landing'); return; }
     clearPdfObservers();
+    if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; } // free previous HWP WASM doc
     currentFile = file;
     saveRecent(file);
     setZoom(1);
@@ -311,6 +312,7 @@
 
   // --- HWP / HWPX (via @rhwp/core WASM — full vector SVG render) ---
   let rhwpReady = false;
+  let rhwpDoc = null; // current HWP document (WASM) — freed before opening another
   async function ensureRhwp() {
     if (rhwpReady) return;
     setLoading('한글 엔진 로딩…');
@@ -335,6 +337,7 @@
     await ensureRhwp();
     const data = await fetchBytes(file);
     const doc = new window.RhwpDocument(new Uint8Array(data));
+    rhwpDoc = doc; // track for cleanup on next open
     const total = doc.pageCount();
     const container = els.content;
     container.innerHTML = '';
@@ -535,7 +538,8 @@
     const ql = q.toLowerCase();
     const walker = document.createTreeWalker(els.content, NodeFilter.SHOW_TEXT, {
       acceptNode: (n) => (n.nodeValue && n.nodeValue.toLowerCase().includes(ql)
-        && n.parentNode && !/SCRIPT|STYLE/.test(n.parentNode.nodeName))
+        && n.parentNode && !/SCRIPT|STYLE/.test(n.parentNode.nodeName)
+        && !(n.parentNode.namespaceURI && n.parentNode.namespaceURI.indexOf('svg') >= 0))
         ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT,
     });
     const nodes = []; let nd;
