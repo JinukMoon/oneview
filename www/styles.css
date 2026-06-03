@@ -110,14 +110,13 @@ html, body {
 /* PDF page indicator */
 #pageind {
   position: fixed;
-  top: calc(env(safe-area-inset-top) + 62px);
-  left: 50%;
-  transform: translateX(-50%);
+  bottom: calc(env(safe-area-inset-bottom) + 30px);
+  left: 14px;
   background: rgba(22, 27, 34, 0.92);
   border: 1px solid var(--border);
   color: var(--text);
   font-size: 12px;
-  padding: 4px 12px;
+  padding: 5px 12px;
   border-radius: 14px;
   z-index: 55;
   pointer-events: none;
