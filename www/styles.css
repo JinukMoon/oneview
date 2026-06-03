@@ -104,6 +104,8 @@ html, body {
 
 /* dark reader — invert document colours for night reading */
 #content.dark-reader { filter: invert(1) hue-rotate(180deg); }
+/* re-invert embedded photos/figures so they keep true colours in dark reader */
+#content.dark-reader img { filter: invert(1) hue-rotate(180deg); }
 
 /* PDF page indicator */
 #pageind {
