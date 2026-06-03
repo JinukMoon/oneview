@@ -14,6 +14,8 @@ await esbuild.build({
   platform: 'browser',
   outfile: path.join(__dirname, 'www', 'vendor', 'app-bundle.js'),
   alias: { fs: emptyShim },
+  loader: { '.wasm': 'file' },
+  assetNames: '[name]',
   legalComments: 'none',
   logLevel: 'info',
 });
@@ -34,5 +36,12 @@ const pdfDist = path.join(__dirname, 'node_modules', 'pdfjs-dist');
 fs.cpSync(path.join(pdfDist, 'cmaps'), path.join(__dirname, 'www', 'vendor', 'cmaps'), { recursive: true });
 fs.cpSync(path.join(pdfDist, 'standard_fonts'), path.join(__dirname, 'www', 'vendor', 'standard_fonts'), { recursive: true });
 console.log('Copied cmaps + standard_fonts.');
+
+// Ensure the @rhwp/core WASM is present at a stable path for runtime init()
+fs.copyFileSync(
+  path.join(__dirname, 'node_modules', '@rhwp', 'core', 'rhwp_bg.wasm'),
+  path.join(__dirname, 'www', 'vendor', 'rhwp_bg.wasm'),
+);
+console.log('Copied rhwp_bg.wasm.');
 
 console.log('Bundle build complete.');

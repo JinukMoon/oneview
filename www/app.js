@@ -302,51 +302,94 @@
     show('content');
   }
 
-  // --- HWP (v5 binary, via hwp.js) ---
-  async function renderHwp(file) {
-    const data = await fetchBytes(file);
-    const bytes = new Uint8Array(data);
-    let bin = '';
-    const CHUNK = 0x8000;
-    for (let i = 0; i < bytes.length; i += CHUNK) {
-      bin += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+  // --- HWP / HWPX (via @rhwp/core WASM — full vector SVG render) ---
+  let rhwpReady = false;
+  async function ensureRhwp() {
+    if (rhwpReady) return;
+    setLoading('한글 엔진 로딩…');
+    await window.rhwpInit('vendor/rhwp_bg.wasm');
+    rhwpReady = true;
+  }
+  function fixSvg(svgEl) {
+    if (!svgEl) return;
+    // ensure aspect-preserving scale to container width
+    if (!svgEl.getAttribute('viewBox')) {
+      const w = parseFloat(svgEl.getAttribute('width'));
+      const h = parseFloat(svgEl.getAttribute('height'));
+      if (w && h) svgEl.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
     }
-    els.content.innerHTML = '';
-    const host = document.createElement('div');
-    host.id = 'hwp-container';
-    els.content.appendChild(host);
-    show('content');
-    new window.HWPViewer(host, bin, { type: 'binary' });
+    svgEl.removeAttribute('width');
+    svgEl.removeAttribute('height');
+    svgEl.style.width = '100%';
+    svgEl.style.height = 'auto';
+    svgEl.style.display = 'block';
   }
-
-  // --- HWPX (zip + OWPML) — text-level extraction ---
-  async function renderHwpx(file) {
+  async function renderHwp(file) {
+    await ensureRhwp();
     const data = await fetchBytes(file);
-    const zip = window.JVUnzip(new Uint8Array(data));
-    const decoder = new TextDecoder('utf-8');
-    const sections = Object.keys(zip).filter((n) => /Contents\/section\d+\.xml$/i.test(n)).sort();
-    let html = '';
-    sections.forEach((n) => {
-      const xml = decoder.decode(zip[n]);
-      const doc = new DOMParser().parseFromString(xml, 'application/xml');
-      const ps = Array.from(doc.getElementsByTagNameNS('*', 'p'));
-      if (ps.length) {
-        ps.forEach((p) => {
-          const ts = Array.from(p.getElementsByTagNameNS('*', 't'));
-          html += '<p>' + (escapeHtml(ts.map((t) => t.textContent).join('')) || '&nbsp;') + '</p>';
-        });
-      } else {
-        const ts = Array.from(doc.getElementsByTagNameNS('*', 't'));
-        html += ts.map((t) => '<p>' + escapeHtml(t.textContent) + '</p>').join('');
-      }
-    });
-    els.content.innerHTML = '';
-    const page = document.createElement('div');
-    page.className = 'doc-view';
-    page.innerHTML = '<div class="hwpx-note">HWPX 내용 보기 (레이아웃 단순화)</div>' + (html || '<p>(내용 없음)</p>');
-    els.content.appendChild(page);
+    const doc = new window.RhwpDocument(new Uint8Array(data));
+    const total = doc.pageCount();
+    const container = els.content;
+    container.innerHTML = '';
+    const bar = document.createElement('div');
+    bar.className = 'ppt-bar';
+    bar.innerHTML = '<button class="iconbtn" id="ppt-open-ext">다른 앱으로 열기 (한컴 등)</button>';
+    container.appendChild(bar);
     show('content');
+
+    // estimate page aspect ratio from page 0 for placeholders
+    const probe = document.createElement('div');
+    probe.innerHTML = doc.renderPageSvg(0);
+    const svg0 = probe.querySelector('svg');
+    let vbW = 595, vbH = 842;
+    if (svg0) {
+      if (svg0.viewBox && svg0.viewBox.baseVal && svg0.viewBox.baseVal.width) {
+        vbW = svg0.viewBox.baseVal.width; vbH = svg0.viewBox.baseVal.height;
+      } else {
+        vbW = parseFloat(svg0.getAttribute('width')) || vbW;
+        vbH = parseFloat(svg0.getAttribute('height')) || vbH;
+      }
+    }
+    const cssW = Math.min(container.clientWidth || window.innerWidth, 1400) - 12;
+    const phH = Math.round(vbH * (cssW / vbW));
+
+    clearPdfObservers();
+    const rendered = new Set();
+    const lazy = new IntersectionObserver((entries) => {
+      entries.forEach((en) => {
+        if (!en.isIntersecting) return;
+        const n = +en.target.dataset.page;
+        if (rendered.has(n)) return;
+        rendered.add(n);
+        try {
+          const holder = document.createElement('div');
+          holder.innerHTML = doc.renderPageSvg(n);
+          const svg = holder.querySelector('svg');
+          fixSvg(svg);
+          en.target.innerHTML = '';
+          en.target.appendChild(svg || holder);
+        } catch (e) { en.target.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+      });
+    }, { root: $('viewer'), rootMargin: '1200px 0px' });
+    const curObs = new IntersectionObserver((entries) => {
+      entries.forEach((en) => { if (en.isIntersecting && els.pageind) els.pageind.textContent = (+en.target.dataset.page + 1) + ' / ' + total; });
+    }, { root: $('viewer'), threshold: 0.5 });
+    pdfObservers = [lazy, curObs];
+
+    for (let i = 0; i < total; i++) {
+      const ph = document.createElement('div');
+      ph.className = 'hwp-svg-page';
+      ph.dataset.page = i;
+      ph.style.width = cssW + 'px';
+      ph.style.height = phH + 'px';
+      container.appendChild(ph);
+      lazy.observe(ph);
+      curObs.observe(ph);
+    }
+    if (els.pageind) { els.pageind.textContent = '1 / ' + total; els.pageind.classList.remove('hidden'); }
+    setTitle(file.name + '  (' + total + 'p)');
   }
+  const renderHwpx = renderHwp; // @rhwp/core handles both
 
   // --- Word (docx-preview — preserves tables/styles/layout) ---
   async function renderDocx(file) {

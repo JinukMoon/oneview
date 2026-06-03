@@ -3,8 +3,7 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "postinstall": "patch-package"
+    "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
   "author": "",
@@ -14,17 +13,15 @@
     "@capacitor/android": "^6.2.1",
     "@capacitor/cli": "^6.2.1",
     "@capacitor/core": "^6.2.1",
+    "@rhwp/core": "^0.7.13",
     "docx-preview": "^0.3.7",
     "fflate": "^0.8.3",
-    "hwp.js": "^0.0.3",
-    "mammoth": "^1.12.0",
     "pdfjs-dist": "^4.10.38",
     "pptx-preview": "^1.0.7",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "esbuild": "^0.28.0",
-    "patch-package": "^8.0.1",
     "playwright": "^1.60.0"
   }
 }

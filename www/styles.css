@@ -75,6 +75,17 @@ html, body {
 }
 .pdf-page { display: block; }
 
+/* HWP/HWPX pages rendered as vector SVG (via @rhwp/core) */
+.hwp-svg-page {
+  display: block;
+  margin: 10px auto;
+  background: #fff;
+  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  max-width: 100%;
+  overflow: hidden;
+}
+.hwp-svg-page svg { width: 100%; height: auto; display: block; }
+
 /* dark reader — invert document colours for night reading */
 #content.dark-reader { filter: invert(1) hue-rotate(180deg); }
 

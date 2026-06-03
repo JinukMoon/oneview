@@ -1,7 +1,7 @@
-// Single browser bundle: exposes pdf.js, hwp.js, and the Capacitor JS runtime
-// on window for the no-bundler WebView app.
+// Single browser bundle: exposes pdf.js, @rhwp/core (HWP/HWPX WASM), and the
+// Capacitor JS runtime on window for the no-bundler WebView app.
 import * as pdfjsLib from 'pdfjs-dist';
-import { Viewer as HWPViewer } from 'hwp.js';
+import rhwpInit, { HwpDocument as RhwpDocument } from '@rhwp/core';
 import { registerPlugin, Capacitor as CapCore } from '@capacitor/core';
 import { renderAsync as docxRender } from 'docx-preview';
 import * as XLSX from 'xlsx';
@@ -11,7 +11,8 @@ import { unzipSync } from 'fflate';
 pdfjsLib.GlobalWorkerOptions.workerSrc = './vendor/pdf.worker.js';
 
 window.pdfjsLib = pdfjsLib;
-window.HWPViewer = HWPViewer;
+window.rhwpInit = rhwpInit;          // call once with the .wasm URL
+window.RhwpDocument = RhwpDocument;  // new RhwpDocument(Uint8Array)
 window.JVRegisterPlugin = registerPlugin;
 window.JVCapacitor = CapCore;
 window.docxRender = docxRender;
