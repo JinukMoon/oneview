@@ -13,18 +13,8 @@
 
   // --- logging + compact error overlay (only appears on a real error) ---
   function dbg(msg) { try { console.log('[OneView]', msg); } catch (e) {} }
-  let errBox = null;
-  function showErr(msg) {
-    try {
-      if (!errBox) {
-        errBox = document.createElement('div');
-        errBox.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:30%;overflow:auto;' +
-          'background:rgba(60,0,0,0.9);color:#ffb3b3;font:11px/1.4 monospace;padding:6px 8px;z-index:99999;white-space:pre-wrap';
-        if (document.body) document.body.appendChild(errBox);
-      }
-      errBox.textContent += msg + '\n';
-    } catch (e) {}
-  }
+  // errors are logged to the console only — no on-screen debug/error overlay for users
+  function showErr(msg) { dbg(msg); }
   window.addEventListener('error', (e) => showErr('ERROR: ' + (e.message || (e.error && e.error.message)) + ' @' + (e.lineno || '')));
   window.addEventListener('unhandledrejection', (e) => showErr('REJECT: ' + (e.reason && (e.reason.message || e.reason))));
 
@@ -44,6 +34,7 @@
     btnDark: $('btn-dark'),
     btnShare: $('btn-share'),
     btnSearch: $('btn-search'),
+    btnHome: $('btn-home'),
     pageind: $('pageind'),
     recent: $('recent'),
     actionbar: $('actionbar'),
@@ -63,7 +54,13 @@
     els.content.style.zoom = zoom;
     if (zoomPct) zoomPct.textContent = Math.round(zoom * 100) + '%';
   }
-  function setZoom(z) { zoom = clampZoom(z); applyZoom(); }
+  let qualityTimer = null;
+  function scheduleQualityRerender() {
+    if (!pdfRerender && !hwpRerender) return;
+    clearTimeout(qualityTimer);
+    qualityTimer = setTimeout(() => { try { if (pdfRerender) pdfRerender(); if (hwpRerender) hwpRerender(); } catch (e) {} }, 200);
+  }
+  function setZoom(z) { zoom = clampZoom(z); applyZoom(); scheduleQualityRerender(); }
 
   // --- dark reader (invert document colors for night reading) ---
   let darkReader = false;
@@ -88,12 +85,32 @@
     if (els.btnDark) els.btnDark.classList.toggle('hidden', !onContent);
     if (els.btnShare) els.btnShare.classList.toggle('hidden', !onContent);
     if (els.btnSearch) els.btnSearch.classList.toggle('hidden', !onContent);
+    if (els.btnHome) els.btnHome.classList.toggle('hidden', which === 'landing');
+    if (which === 'content' || which === 'forward') pushDocHistory();
+    if (which === 'landing') docHistoryPushed = false;
     if (els.actionbar) els.actionbar.classList.add('hidden'); // renderers re-show as needed
     if (!onContent) closeSearch();
     if (els.pageind) els.pageind.classList.add('hidden'); // PDF re-shows it
     if (onContent) applyDarkReader();
     if (which === 'landing') { setTitle('OneView'); renderRecents(); }
   }
+  // --- home / back navigation (hardware back button + home button) ---
+  let docHistoryPushed = false;
+  function pushDocHistory() {
+    if (!docHistoryPushed) { try { history.pushState({ ov: 'doc' }, ''); } catch (e) {} docHistoryPushed = true; }
+  }
+  function goLanding() {
+    openSeq++;              // supersede any in-flight render so it self-cancels via its seq guard
+    clearPdfObservers();
+    freeResources();        // free pdf doc / blob / HWP WASM / pptx previewer, etc.
+    els.content.innerHTML = '';
+    show('landing');
+  }
+  function goHome() {
+    if (docHistoryPushed) history.back(); // pops the doc entry → popstate → goLanding
+    else goLanding();
+  }
+  window.addEventListener('popstate', () => { docHistoryPushed = false; goLanding(); });
   function setLoading(text) {
     els.loadingText.textContent = text || '여는 중…';
     show('loading');
@@ -169,9 +186,16 @@
   let pdfObservers = [];
   let pdfDoc = null;       // current PDFDocumentProxy — destroyed before next open
   let curBlobUrl = null;   // current image blob URL — revoked before next open
+  let pdfRerender = null;  // re-renders visible PDF pages at higher resolution when zoomed
+  let hwpRerender = null;  // re-renders visible HWP pages after zoom (IO can miss zoom-driven changes)
+  let pptxPreviewer = null; // current pptx-preview instance — destroyed before next open
   function freeResources() {
     if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
     if (curBlobUrl) { try { URL.revokeObjectURL(curBlobUrl); } catch (e) {} curBlobUrl = null; }
+    pdfRerender = null;
+    hwpRerender = null;
+    if (pptxPreviewer) { try { pptxPreviewer.destroy(); } catch (e) {} pptxPreviewer = null; }
+    xlsxSheetEls = [];
     if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; }
   }
   function clearPdfObservers() {
@@ -182,7 +206,7 @@
   // --- core open flow ---
   async function openFile(file) {
     dbg('openFile ' + JSON.stringify(file));
-    if (!file || !file.path) { show('landing'); return; }
+    if (!file || !file.path) { goLanding(); return; }
     const myseq = ++openSeq;
     clearPdfObservers();
     freeResources(); // destroy previous PDF doc, revoke image blob, free HWP WASM doc
@@ -198,6 +222,12 @@
     closeSearch();
 
     if (ext === 'pdf') return renderPdf(file).catch((e) => fail('PDF', e, file));
+    if (ext === 'heic' || ext === 'heif') {
+      els.fwdMsg.textContent = '이 형식(HEIC/HEIF)은 기기에서 앱이 직접 못 열어요. 사진 앱으로 열어볼까요?';
+      showForward(file);
+      doForward();
+      return;
+    }
     if (IMAGE_EXT.includes(ext)) return renderImage(file, ext).catch((e) => fail('이미지', e, file));
     if (ext === 'hwp') return renderHwp(file).catch((e) => fail('HWP', e, file));
     if (ext === 'hwpx') return renderHwpx(file).catch((e) => fail('HWPX', e, file));
@@ -244,6 +274,7 @@
   async function renderPdf(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
+    if (seq !== openSeq) return;
     const pdfjsLib = window.pdfjsLib;
     const pdf = await pdfjsLib.getDocument({
       data,
@@ -261,7 +292,8 @@
 
     const total = pdf.numPages;
     const cssWidth = Math.min(container.clientWidth || window.innerWidth, 1400);
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 3);
+    const MAX_CANVAS_W = 3000; // cap backing store to bound memory during zoom re-render
 
     const page1 = await pdf.getPage(1);
     if (seq !== openSeq) return;
@@ -273,19 +305,29 @@
     const rendered = new Set();
     async function renderPage(n, ph) {
       if (seq !== openSeq) return;
+      const q = baseDpr * Math.max(1, zoom);
+      const renderScale = Math.min(scale * q, MAX_CANVAS_W / vp1.width);
+      if (ph.firstChild && ph._rs && ph._rs >= renderScale) return; // already rendered at >= this quality
       try {
+        if (ph._task) { try { ph._task.cancel(); } catch (e) {} ph._task = null; }
         const page = n === 1 ? page1 : await pdf.getPage(n);
         if (seq !== openSeq) return;
-        const vp = page.getViewport({ scale: scale * dpr });
+        const vp = page.getViewport({ scale: renderScale });
         const canvas = document.createElement('canvas');
         canvas.className = 'pdf-page';
         canvas.width = Math.floor(vp.width);
         canvas.height = Math.floor(vp.height);
         canvas.style.width = '100%';
-        canvas.style.height = '100%';
-        ph.innerHTML = '';
+        canvas.style.height = 'auto'; // keep each page's true aspect (handles mixed page sizes)
+        const task = page.render({ canvasContext: canvas.getContext('2d'), viewport: vp });
+        ph._task = task;
+        await task.promise;
+        if (seq !== openSeq) return;
+        ph.innerHTML = ''; // swap in the finished canvas only now (no flash / no concurrent append)
         ph.appendChild(canvas);
-        await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+        ph.style.height = 'auto';
+        ph._rs = renderScale;
+        ph._task = null;
       } catch (e) { dbg('pdf page ' + n + ' err ' + e); }
     }
 
@@ -295,9 +337,11 @@
         if (en.isIntersecting) {
           if (!rendered.has(n)) { rendered.add(n); renderPage(n, en.target); }
         } else if (rendered.has(n)) {
-          // evict offscreen page to cap memory on long documents
-          en.target.style.height = en.target.offsetHeight + 'px';
+          // evict offscreen page to cap memory (freeze measured, de-scaled height to avoid scroll jump)
+          if (en.target._task) { try { en.target._task.cancel(); } catch (e) {} en.target._task = null; }
+          en.target.style.height = (en.target.getBoundingClientRect().height / zoom) + 'px';
           en.target.innerHTML = '';
+          en.target._rs = 0;
           rendered.delete(n);
         }
       });
@@ -323,6 +367,12 @@
       lazyObs.observe(ph);
       curObs.observe(ph);
     }
+    pdfRerender = () => {
+      container.querySelectorAll('.pdf-page-ph').forEach((ph) => {
+        const n = +ph.dataset.page;
+        if (rendered.has(n)) renderPage(n, ph);
+      });
+    };
 
     if (els.pageind) { els.pageind.textContent = '1 / ' + total; els.pageind.classList.remove('hidden'); }
     setTitle(file.name);
@@ -340,10 +390,20 @@
     els.content.innerHTML = '';
     const img = document.createElement('img');
     img.className = 'img-view';
+    function applyFit() {
+      if (seq !== openSeq) return;
+      const cw = els.content.clientWidth || window.innerWidth;
+      const fitW = img.naturalWidth ? Math.min(img.naturalWidth, cw) : cw;
+      img.style.width = fitW + 'px';
+      img.style.maxWidth = 'none';
+      img.style.height = 'auto';
+    }
+    img.onload = applyFit;
+    img.onerror = () => { if (seq === openSeq) fail('이미지', new Error('img load error'), file); };
     img.src = url;
-    img.onerror = () => fail('이미지', new Error('img load error'), file);
     els.content.appendChild(img);
     show('content');
+    if (img.complete && img.naturalWidth) applyFit();
   }
 
   // --- HWP / HWPX (via @rhwp/core WASM — full vector SVG render) ---
@@ -402,26 +462,29 @@
     const cssW = Math.min(container.clientWidth || window.innerWidth, 1400) - 12;
     const phH = Math.round(vbH * (cssW / vbW));
 
-    clearPdfObservers();
+
     const rendered = new Set();
+    function renderHwpPage(n, ph) {
+      if (rendered.has(n)) return;
+      rendered.add(n);
+      try {
+        const holder = document.createElement('div');
+        holder.innerHTML = doc.renderPageSvg(n);
+        const svg = holder.querySelector('svg');
+        fixSvg(svg);
+        ph.innerHTML = '';
+        ph.appendChild(svg || holder);
+        ph.style.height = 'auto'; // fit the real page height (pages vary), no clipping
+      } catch (e) { ph.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+    }
     const lazy = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
         const n = +en.target.dataset.page;
         if (en.isIntersecting) {
-          if (rendered.has(n)) return;
-          rendered.add(n);
-          try {
-            const holder = document.createElement('div');
-            holder.innerHTML = doc.renderPageSvg(n);
-            const svg = holder.querySelector('svg');
-            fixSvg(svg);
-            en.target.innerHTML = '';
-            en.target.appendChild(svg || holder);
-            en.target.style.height = 'auto'; // fit the real page height (pages vary), no clipping
-          } catch (e) { en.target.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+          renderHwpPage(n, en.target);
         } else if (rendered.has(n)) {
           // evict offscreen page (freeze height first to avoid scroll jump) to cap memory
-          en.target.style.height = en.target.offsetHeight + 'px';
+          en.target.style.height = (en.target.getBoundingClientRect().height / zoom) + 'px';
           en.target.innerHTML = '';
           rendered.delete(n);
         }
@@ -442,6 +505,17 @@
       lazy.observe(ph);
       curObs.observe(ph);
     }
+    hwpRerender = () => {
+      const vr = $('viewer').getBoundingClientRect();
+      container.querySelectorAll('.hwp-svg-page').forEach((ph) => {
+        const r = ph.getBoundingClientRect();
+        if (r.bottom > vr.top - 1500 && r.top < vr.bottom + 1500) {
+          const n = +ph.dataset.page;
+          if (rendered.has(n)) ph.style.height = 'auto'; // repair any clipped/frozen height after zoom
+          else renderHwpPage(n, ph);
+        }
+      });
+    };
     if (els.pageind) { els.pageind.textContent = '1 / ' + total; els.pageind.classList.remove('hidden'); }
     setTitle(file.name + '  (' + total + 'p)');
   }
@@ -581,6 +655,36 @@
     return table;
   }
 
+  // Mount sheets with a fixed top tab bar (in #actionbar so it doesn't zoom); one sheet visible at a time.
+  let xlsxSheetEls = [];
+  function activateSheet(i) {
+    xlsxSheetEls.forEach((el, k) => el.classList.toggle('hidden', k !== i));
+    if (els.actionbar) els.actionbar.querySelectorAll('.sheet-tab-btn').forEach((b, k) => b.classList.toggle('active', k === i));
+  }
+  function mountSheets(sheets) {
+    els.content.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.className = 'sheet-view';
+    xlsxSheetEls = sheets.map((s, i) => {
+      const sec = document.createElement('div');
+      sec.className = 'xlsx-sheet' + (i === 0 ? '' : ' hidden');
+      const holder = document.createElement('div');
+      holder.style.overflowX = 'auto';
+      holder.appendChild(s.node);
+      sec.appendChild(holder);
+      wrap.appendChild(sec);
+      return sec;
+    });
+    els.content.appendChild(wrap);
+    show('content');
+    if (sheets.length > 1) {
+      const btns = sheets.map((s, i) =>
+        '<button class="sheet-tab-btn' + (i === 0 ? ' active' : '') + '" data-sheet="' + i + '">' +
+        escapeHtml(s.name) + '</button>').join('');
+      showActionBar('<div class="sheet-tabs">' + btns + '</div>');
+    }
+  }
+
   async function renderXlsx(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
@@ -592,59 +696,45 @@
         const wb = new window.ExcelJS.Workbook();
         await wb.xlsx.load(fixed);
         if (seq !== openSeq) return;
-        els.content.innerHTML = '';
-        const wrap = document.createElement('div');
-        wrap.className = 'sheet-view';
-        wb.worksheets.forEach((ws) => {
-          const tab = document.createElement('div'); tab.className = 'sheet-tab'; tab.textContent = ws.name.trim();
-          wrap.appendChild(tab);
-          const holder = document.createElement('div'); holder.style.overflowX = 'auto';
-          holder.appendChild(renderExcelSheet(ws));
-          wrap.appendChild(holder);
-        });
-        els.content.appendChild(wrap);
-        show('content');
+        const sheets = wb.worksheets.map((ws) => ({ name: ws.name.trim(), node: renderExcelSheet(ws) }));
+        mountSheets(sheets);
         return;
       } catch (e) { dbg('ExcelJS failed, fallback to SheetJS: ' + (e && e.message)); }
     }
     // fallback: SheetJS plain table (also handles .xls)
     const wb = window.XLSX.read(new Uint8Array(data), { type: 'array' });
-    els.content.innerHTML = '';
-    const wrap = document.createElement('div');
-    wrap.className = 'sheet-view';
-    wb.SheetNames.forEach((name) => {
-      const tab = document.createElement('div'); tab.className = 'sheet-tab'; tab.textContent = name;
-      wrap.appendChild(tab);
-      const holder = document.createElement('div'); holder.style.overflowX = 'auto';
+    if (seq !== openSeq) return;
+    const sheets = wb.SheetNames.map((name) => {
+      const holder = document.createElement('div');
       holder.innerHTML = window.XLSX.utils.sheet_to_html(wb.Sheets[name], { editable: false });
       sanitizeNode(holder);
       holder.querySelectorAll('td, th').forEach((c) => { const t = c.textContent; if (/[₩$€£¥]/.test(t) && !/\d/.test(t)) c.textContent = ''; });
-      wrap.appendChild(holder);
+      return { name: name, node: holder };
     });
-    els.content.appendChild(wrap);
-    show('content');
+    mountSheets(sheets);
   }
 
-  // --- PowerPoint (static preview + handoff to PowerPoint) ---
-  const PPTX_MAX_BYTES = 60 * 1024 * 1024; // very large decks OOM pptx-preview → hand off instead
+  // --- PowerPoint (static preview, vertical slide list + handoff to PowerPoint) ---
   async function renderPptx(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
     if (seq !== openSeq) return;
-    if (data.byteLength > PPTX_MAX_BYTES) {
-      els.fwdMsg.textContent = '용량이 큰 PPT예요 (' + Math.round(data.byteLength / 1048576) + 'MB). 앱에서 열면 느려서, PowerPoint로 여는 걸 권해요.';
-      showForward(file);
-      return;
-    }
     els.content.innerHTML = '';
+    const note = document.createElement('div');
+    note.className = 'hwpx-note';
+    note.textContent = '슬라이드 렌더링 중… 용량이 크면 시간이 걸릴 수 있어요.';
+    els.content.appendChild(note);
     const host = document.createElement('div');
     host.id = 'pptx-wrapper';
     els.content.appendChild(host);
     show('content');
     showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>');
     const w = Math.min(els.content.clientWidth || window.innerWidth, 1280) - 8;
-    const previewer = window.pptxInit(host, { width: w, height: Math.round((w * 9) / 16) });
-    await previewer.preview(data);
+    // mode 'list' = every slide stacked vertically; OMIT height so the wrapper is not
+    // clamped to one-slide height with inner overflow (that caused the "small box" view) — it grows to fit all slides
+    pptxPreviewer = window.pptxInit(host, { width: w, mode: 'list' });
+    try { await pptxPreviewer.preview(data); if (seq !== openSeq) return; }
+    finally { if (seq === openSeq) note.remove(); }
   }
 
   // --- Text ---
@@ -772,6 +862,7 @@
   document.addEventListener('click', (e) => {
     const id = e.target.id;
     if (id === 'btn-open' || id === 'btn-open2') pickFile();
+    else if (id === 'btn-home') goHome();
     else if (id === 'btn-forward' || id === 'ppt-open-ext') doForward();
     else if (id === 'btn-share') doShare();
     else if (id === 'btn-search') openSearch();
@@ -782,6 +873,7 @@
     else if (id === 'zoom-in') setZoom(zoom * 1.25);
     else if (id === 'zoom-out') setZoom(zoom / 1.25);
     else if (id === 'zoom-reset') setZoom(1);
+    else if (e.target.classList && e.target.classList.contains('sheet-tab-btn')) activateSheet(+e.target.dataset.sheet);
     else {
       const item = e.target.closest && e.target.closest('.recent-item');
       if (item) {
