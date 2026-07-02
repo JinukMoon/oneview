@@ -729,6 +729,43 @@
     box.scrollTop = box.scrollHeight;
   }
 
+  // On-device black diagnostic: scan a grid over the viewport; for each sample, walk the
+  // element stack under that point and report the first ancestor with a non-transparent bg.
+  // Tells us WHICH layer (canvas / slide / wrapper / body) is painting black on the phone.
+  function runPptDiag() {
+    const host = document.getElementById('pptx-wrapper');
+    const box = document.getElementById('ppt-dbg') || (function () { pptDbg(host, ''); return document.getElementById('ppt-dbg'); })();
+    const W = window.innerWidth, H = window.innerHeight;
+    const lines = ['[DIAG] viewport ' + W + 'x' + H];
+    const seen = {};
+    for (let gy = 0.12; gy < 0.95; gy += 0.14) {
+      for (let gx = 0.15; gx < 1; gx += 0.2) {
+        const x = Math.round(W * gx), y = Math.round(H * gy);
+        const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)]).filter(Boolean);
+        // find first layer with an opaque-ish background
+        for (const el of stack) {
+          const cs = getComputedStyle(el);
+          const bg = cs.backgroundColor;
+          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
+            const tag = el.tagName + '.' + (typeof el.className === 'string' ? el.className.replace(/\s+/g, '.').slice(0, 22) : '');
+            const key = tag + '|' + bg;
+            seen[key] = (seen[key] || 0) + 1;
+            break;
+          }
+        }
+      }
+    }
+    Object.keys(seen).sort((a, b) => seen[b] - seen[a]).forEach((k) => lines.push('  ' + seen[k] + '×  ' + k));
+    // also count canvases and their computed bg
+    if (host) {
+      const cvs = host.querySelectorAll('canvas');
+      let cbg = {};
+      cvs.forEach((c) => { const b = getComputedStyle(c).backgroundColor; cbg[b] = (cbg[b] || 0) + 1; });
+      lines.push('[DIAG] canvases=' + cvs.length + '  ' + Object.keys(cbg).map((k) => cbg[k] + '×' + k).join('  '));
+    }
+    lines.forEach((l) => pptDbg(host, l));
+  }
+
 
   async function renderPptx(file) {
     const seq = openSeq;
@@ -743,7 +780,8 @@
     host.id = 'pptx-wrapper';
     els.content.appendChild(host);
     show('content');
-    showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>');
+    showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>'
+      + '<button class="iconbtn" id="ppt-diag" style="margin-top:6px">🩺 검정 진단</button>');
     const w = Math.min(els.content.clientWidth || window.innerWidth, 1280) - 8;
     const dpr0 = window.devicePixelRatio || 1;
     pptDbg(host, '[PPT] start  file=' + (data.byteLength / 1048576).toFixed(1) + 'MB  width=' + w + '  dpr=' + dpr0);
@@ -779,9 +817,25 @@
       host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]').forEach((s) => {
         s.style.background = '#fff';
         s.style.margin = '0 auto';               // drop the 10px inter-slide gap that showed as a black band
+        // Some phone GPUs promote transform:scale subtrees to a hardware layer whose backdrop
+        // renders BLACK. Force an opaque own-backdrop and defeat layer-isolation quirks.
+        s.style.isolation = 'isolate';
+        s.style.backgroundColor = '#fff';
+        s.style.backfaceVisibility = 'visible';
+        s.style.willChange = 'auto';
         whitened++;
       });
-      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slides→white=' + whitened + '  gaps removed');
+      // Inner slide containers → opaque white so nothing underneath shows through as black.
+      let innerFixed = 0;
+      host.querySelectorAll('.slide-wrapper, .slide-background, .slide-content').forEach((n) => {
+        if (getComputedStyle(n).backgroundColor === 'rgba(0, 0, 0, 0)') { n.style.backgroundColor = '#fff'; innerFixed++; }
+      });
+      // pptx-preview draws shapes/charts onto <canvas> via zrender. A transparent canvas
+      // composited on some phone GPUs shows up BLACK. Give every slide canvas a white backing.
+      let canvasFixed = 0;
+      host.querySelectorAll('canvas').forEach((c) => { c.style.background = '#fff'; canvasFixed++; });
+      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slides→white=' + whitened
+        + '  inner=' + innerFixed + '  canvas=' + canvasFixed + '  gaps removed');
     } catch (e) { pptDbg(host, '[PPT] bg force err: ' + (e && e.message)); }
       pptDbg(host, '[PPT] done. If still black, tell me the numbers above.');
     } catch (e) {
@@ -954,6 +1008,7 @@
     if (id === 'btn-open' || id === 'btn-open2') pickFile();
     else if (id === 'btn-home') goHome();
     else if (id === 'btn-forward' || id === 'ppt-open-ext') doForward();
+    else if (id === 'ppt-diag') runPptDiag();
     else if (id === 'btn-share') doShare();
     else if (id === 'btn-search') openSearch();
     else if (id === 'search-prev') gotoMatch(curMatch - 1);
