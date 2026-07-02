@@ -804,40 +804,76 @@
       pptDbg(host, '[PPT] imgs=' + imgs.length + '  broken(decode-fail)=' + broken
         + '  >1400px=' + over + '  maxMP=' + maxMP.toFixed(1) + '  sumMP=' + sumMP.toFixed(0));
       await downscalePptxImages(host, seq, (m) => pptDbg(host, m));
-      // Force backgrounds via inline style (CSS !important isn't reliably honored on some WebViews):
-      // pptx wrapper paints itself #000 → set app bg; each slide → white so empty areas aren't black.
-    try {
-      const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
-      const wrapEl = host.querySelector('.pptx-preview-wrapper');
-      if (wrapEl) wrapEl.style.background = appBg;
-      host.style.background = appBg;
-      els.content.style.background = appBg;      // scroll gaps fall through to these — make them app bg, not black
-      $('viewer').style.background = appBg;
-      let whitened = 0;
-      host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]').forEach((s) => {
-        // Do NOT paint the slide itself white — pptx-preview stacks master/layout background
-        // graphics (banners, crests, logos) UNDER the content, and an opaque white on the
-        // slide wrapper hides all of them.
-        // Keep a clean gap BETWEEN slides (app-bg color, not raw black) so slides read as separate.
-        s.style.margin = '0 auto 12px';
-        s.style.backfaceVisibility = 'visible';
-        s.style.willChange = 'auto';
-        // The bottom-most .slide-background layer is what should be opaque white so empty
-        // areas (and transparent regions on hardware-composited WebViews) aren't black.
-        const bg = s.querySelector('.slide-background');
-        if (bg) { bg.style.backgroundColor = '#fff'; whitened++; }
-      });
-      // pptx-preview draws shapes/charts onto <canvas> via zrender. A transparent canvas
-      // composited on some phone GPUs shows up BLACK. Give every slide canvas a white backing.
-      let canvasFixed = 0;
-      host.querySelectorAll('canvas').forEach((c) => { c.style.background = '#fff'; canvasFixed++; });
-      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slide-bg→white=' + whitened
-        + '  canvas=' + canvasFixed + '  gap kept');
-    } catch (e) { pptDbg(host, '[PPT] bg force err: ' + (e && e.message)); }
-      pptDbg(host, '[PPT] done. If still black, tell me the numbers above.');
+      if (seq !== openSeq) return;
+      // Bake each slide DOM into a single flat image. pptx-preview stacks master/layout/content
+      // as absolutely-positioned transform:scale() layers; some phone WebViews fail to composite
+      // those layers (black bands, missing layout graphics). Flattening every slide to one image
+      // sidesteps GPU compositing entirely — the same reason PDF/HWP (canvas) never go black.
+      // Safe because downscalePptxImages already turned every <img> into an inline dataURL, so
+      // the foreignObject render is not tainted.
+      try {
+        const baked = await bakePptxSlides(host, seq, (m) => pptDbg(host, m));
+        pptDbg(host, '[PPT] baked slides=' + baked.ok + '/' + baked.total + '  failed=' + baked.failed);
+      } catch (e) { pptDbg(host, '[PPT] bake err: ' + (e && e.message)); }
+      // Make the scroll container app-bg so inter-slide gaps read as a clean dark divider, not raw black.
+      try {
+        const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
+        host.style.background = appBg;
+        els.content.style.background = appBg;
+        $('viewer').style.background = appBg;
+      } catch (e) {}
+      pptDbg(host, '[PPT] done.');
     } catch (e) {
       pptDbg(host, '[PPT] ERROR: ' + (e && (e.message || e)));
     } finally { if (seq === openSeq) note.remove(); }
+  }
+
+  // Flatten each pptx-preview slide (master + layout + content layers) into a single <img>.
+  // Uses SVG <foreignObject> to rasterize the slide subtree, drawn onto a 2x canvas for zoom
+  // headroom, then swaps the live slide node for a plain image so the phone GPU only composites
+  // one bitmap per slide (no transform-layer compositing bugs → no black bands, no lost layout).
+  async function bakePptxSlides(host, seq, log) {
+    const slides = Array.from(host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]'));
+    const OVERSAMPLE = 3; // render at 3x slide CSS size for crisp zoom-in
+    let ok = 0, failed = 0;
+    for (const slide of slides) {
+      if (seq !== openSeq) return { ok, failed, total: slides.length };
+      try {
+        const rect = slide.getBoundingClientRect();
+        const W = Math.round(rect.width), H = Math.round(rect.height);
+        if (!W || !H) { failed++; continue; }
+        const clone = slide.cloneNode(true);
+        clone.style.margin = '0';
+        clone.style.background = '#fff';
+        const xml = new XMLSerializer().serializeToString(clone);
+        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '">'
+          + '<foreignObject width="100%" height="100%">'
+          + '<div xmlns="http://www.w3.org/1999/xhtml">' + xml + '</div></foreignObject></svg>';
+        const svgImg = new Image();
+        const state = await new Promise((res) => {
+          svgImg.onload = () => res('ok');
+          svgImg.onerror = () => res('err');
+          setTimeout(() => res('timeout'), 6000);
+          svgImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+        });
+        if (state !== 'ok') { failed++; continue; }
+        const cv = document.createElement('canvas');
+        cv.width = W * OVERSAMPLE; cv.height = H * OVERSAMPLE;
+        const ctx = cv.getContext('2d');
+        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
+        ctx.scale(OVERSAMPLE, OVERSAMPLE);
+        ctx.drawImage(svgImg, 0, 0, W, H);
+        const url = cv.toDataURL('image/jpeg', 0.92);
+        const flat = document.createElement('img');
+        flat.src = url;
+        flat.className = 'pptx-baked-slide';
+        flat.style.cssText = 'display:block;width:' + W + 'px;height:' + H + 'px;margin:0 auto 12px';
+        slide.replaceWith(flat);
+        ok++;
+        await new Promise((r) => setTimeout(r, 0));
+      } catch (e) { failed++; }
+    }
+    return { ok, failed, total: slides.length };
   }
 
   // Re-encode EVERY pptx <img> through a canvas to a plain RGBA PNG. Two fixes at once:
