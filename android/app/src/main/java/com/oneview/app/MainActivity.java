@@ -11,7 +11,24 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(FileBridge.class);
+        // Cold start without an incoming file → clear leftover cached copies from previous sessions.
+        Intent i = getIntent();
+        boolean hasFile = i != null && (i.getData() != null
+                || (Intent.ACTION_SEND.equals(i.getAction()) && i.hasExtra(Intent.EXTRA_STREAM)));
+        if (!hasFile) {
+            try {
+                java.io.File incoming = new java.io.File(getCacheDir(), "incoming");
+                java.io.File[] dirs = incoming.listFiles();
+                if (dirs != null) for (java.io.File d : dirs) deleteRecursive(d);
+            } catch (Exception ignored) {}
+        }
         super.onCreate(savedInstanceState);
+    }
+
+    private static void deleteRecursive(java.io.File f) {
+        java.io.File[] kids = f.listFiles();
+        if (kids != null) for (java.io.File k : kids) deleteRecursive(k);
+        f.delete();
     }
 
     @Override

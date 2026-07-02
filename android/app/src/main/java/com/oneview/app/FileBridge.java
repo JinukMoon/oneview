@@ -219,17 +219,19 @@ public class FileBridge extends Plugin {
             int r;
             while ((r = in.read(buf)) != -1) os.write(buf, 0, r);
         }
-        pruneIncoming(incoming, 20); // cap cached copies so they don't pile up forever
+        pruneIncomingExcept(incoming, dir); // keep ONLY the file just opened; drop every older cached copy
         return out;
     }
 
-    // keep only the newest `keep` cached copies; delete older ones to bound cache growth
-    private void pruneIncoming(File incoming, int keep) {
+    // Delete every cached copy except the one currently in use, so the cache stays ~one-document sized.
+    private void pruneIncomingExcept(File incoming, File keepDir) {
         try {
             File[] dirs = incoming.listFiles(File::isDirectory);
-            if (dirs == null || dirs.length <= keep) return;
-            java.util.Arrays.sort(dirs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
-            for (int i = keep; i < dirs.length; i++) deleteRecursive(dirs[i]);
+            if (dirs == null) return;
+            for (File d : dirs) {
+                if (keepDir != null && d.getAbsolutePath().equals(keepDir.getAbsolutePath())) continue;
+                deleteRecursive(d);
+            }
         } catch (Exception ignored) {}
     }
     private void deleteRecursive(File f) {
