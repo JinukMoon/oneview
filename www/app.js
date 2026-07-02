@@ -274,7 +274,7 @@
   // --- byte fetching via Capacitor local file server ---
   async function fetchBytes(file, maxBytes) {
     const url = Capacitor && Capacitor.convertFileSrc ? Capacitor.convertFileSrc(file.path) : file.path;
-    const res = await fetch(url);
+    const res = await fetch(url, { cache: 'no-store' }); // don't let the WebView cache big documents on disk
     if (!res.ok) throw new Error('fetch failed ' + res.status);
     const buf = await res.arrayBuffer();
     if (maxBytes && buf.byteLength > maxBytes) return buf.slice(0, maxBytes);

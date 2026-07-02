@@ -23,6 +23,13 @@ public class MainActivity extends BridgeActivity {
             } catch (Exception ignored) {}
         }
         super.onCreate(savedInstanceState);
+        if (!hasFile) {
+            // also drop the WebView's own HTTP/disk cache (fetched documents can linger there)
+            try {
+                android.webkit.WebView wv = getBridge() != null ? getBridge().getWebView() : null;
+                if (wv != null) wv.clearCache(true);
+            } catch (Exception ignored) {}
+        }
     }
 
     private static void deleteRecursive(java.io.File f) {
