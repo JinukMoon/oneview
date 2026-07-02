@@ -768,15 +768,21 @@
       await downscalePptxImages(host, seq, (m) => pptDbg(host, m));
       // Force backgrounds via inline style (CSS !important isn't reliably honored on some WebViews):
       // pptx wrapper paints itself #000 → set app bg; each slide → white so empty areas aren't black.
-      try {
-        const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
-        const wrapEl = host.querySelector('.pptx-preview-wrapper');
-        if (wrapEl) wrapEl.style.background = appBg;
-        host.style.background = appBg;
-        let whitened = 0;
-        host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]').forEach((s) => { s.style.background = '#fff'; whitened++; });
-        pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slides→white=' + whitened);
-      } catch (e) { pptDbg(host, '[PPT] bg force err: ' + (e && e.message)); }
+    try {
+      const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
+      const wrapEl = host.querySelector('.pptx-preview-wrapper');
+      if (wrapEl) wrapEl.style.background = appBg;
+      host.style.background = appBg;
+      els.content.style.background = appBg;      // scroll gaps fall through to these — make them app bg, not black
+      $('viewer').style.background = appBg;
+      let whitened = 0;
+      host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]').forEach((s) => {
+        s.style.background = '#fff';
+        s.style.margin = '0 auto';               // drop the 10px inter-slide gap that showed as a black band
+        whitened++;
+      });
+      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slides→white=' + whitened + '  gaps removed');
+    } catch (e) { pptDbg(host, '[PPT] bg force err: ' + (e && e.message)); }
       pptDbg(host, '[PPT] done. If still black, tell me the numbers above.');
     } catch (e) {
       pptDbg(host, '[PPT] ERROR: ' + (e && (e.message || e)));
