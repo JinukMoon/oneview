@@ -804,8 +804,13 @@
         const nw = img.naturalWidth, nh = img.naturalHeight;
         if (!nw || !nh) { decodeFailed++; continue; }
         const rect = img.getBoundingClientRect();
-        const targetW = Math.max(1, Math.round((rect.width || nw) * dpr));
-        const scale = nw > targetW * 1.5 ? targetW / nw : 1; // downscale big ones; others stay 1:1
+        // keep resolution headroom for zoom-in: target = display width × dpr × zoom headroom,
+        // but never upscale beyond the source and never exceed a memory cap.
+        const ZOOM_HEADROOM = 3;
+        const MAX_W = 2200; // per-image width cap (bounds memory even for big source images)
+        const wantW = Math.round((rect.width || nw) * dpr * ZOOM_HEADROOM);
+        const targetW = Math.min(nw, wantW, MAX_W);   // don't upscale past source; cap for memory
+        const scale = targetW < nw ? targetW / nw : 1; // shrink only when source is larger than target
         if (scale < 1) scaled++;
         const cw = Math.max(1, Math.round(nw * scale));
         const ch = Math.max(1, Math.round(nh * scale));
