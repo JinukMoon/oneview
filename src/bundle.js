@@ -6,6 +6,7 @@ import { registerPlugin, Capacitor as CapCore } from '@capacitor/core';
 import { renderAsync as docxRender } from 'docx-preview';
 import * as XLSX from 'xlsx';
 import { init as pptxInit } from 'pptx-preview';
+import { App as CapApp } from '@capacitor/app';
 import { unzipSync, zipSync } from 'fflate';
 import ExcelJS from 'exceljs';
 
@@ -22,3 +23,4 @@ window.pptxInit = pptxInit;
 window.JVUnzip = unzipSync;
 window.JVZip = zipSync;
 window.ExcelJS = ExcelJS;
+window.JVApp = CapApp; // Capacitor App plugin — hardware back button handling

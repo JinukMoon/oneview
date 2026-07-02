@@ -140,6 +140,9 @@
       localStorage.setItem('oneview_recents', JSON.stringify(r.slice(0, 12)));
     } catch (e) {}
   }
+  function removeRecent(path) {
+    try { localStorage.setItem('oneview_recents', JSON.stringify(loadRecents().filter((x) => x.path !== path))); } catch (e) {}
+  }
   function renderRecents() {
     if (!els.recent) return;
     const r = loadRecents();
@@ -252,6 +255,14 @@
     const detail = err && (err.stack || err.message || String(err));
     dbg('render failed: ' + label + ' ' + detail);
     showErr(label + ' 렌더 실패:\n' + (detail ? String(detail).split('\n').slice(0, 4).join('\n') : '(no detail)'));
+    const gone = /fetch failed|failed to fetch|networkerror|not found|\b404\b/i.test(String(detail || ''));
+    if (gone) {
+      // the file at this path is unavailable (deleted / moved / temp copy expired) — nothing to forward
+      removeRecent(file.path);
+      goLanding();
+      toast('파일을 열 수 없어요. 삭제·이동되었거나 임시 사본이 사라진 것 같아요.');
+      return;
+    }
     if (label === 'HWP') {
       els.fwdMsg.textContent = '이 한글 파일은 앱에서 직접 표시가 안 돼요 (배포용·암호화 또는 이미지 포함 문서일 수 있어요). 한글 앱으로 열어볼까요?';
     } else {
@@ -905,6 +916,15 @@
   // file arriving while app is open
   if (FileBridge && FileBridge.addListener) {
     FileBridge.addListener('incomingFile', (data) => { if (data && data.path) openFile(data); });
+  }
+
+  // hardware back button (Android): in a document → go to landing; already on landing → exit app
+  const CapApp = window.JVApp || (Capacitor && Capacitor.Plugins && Capacitor.Plugins.App);
+  if (CapApp && CapApp.addListener) {
+    CapApp.addListener('backButton', () => {
+      if (els.landing.classList.contains('hidden')) goLanding();
+      else if (CapApp.exitApp) { try { CapApp.exitApp(); } catch (e) {} }
+    });
   }
 
   // cold-start launch file

@@ -205,7 +205,8 @@ public class FileBridge extends Plugin {
 
     private File copyToCache(Uri uri, String name) throws Exception {
         // unique per-copy subdir → no collision when two files share a display name
-        File dir = new File(getContext().getCacheDir(), "incoming/" + System.nanoTime());
+        File incoming = new File(getContext().getCacheDir(), "incoming");
+        File dir = new File(incoming, String.valueOf(System.nanoTime()));
         if (!dir.exists()) dir.mkdirs();
         // keep only URL-safe chars (letters incl. Korean, digits, . _ -) so convertFileSrc/fetch works
         String safe = name.replaceAll("[^\\p{L}\\p{N}._-]", "_");
@@ -218,7 +219,23 @@ public class FileBridge extends Plugin {
             int r;
             while ((r = in.read(buf)) != -1) os.write(buf, 0, r);
         }
+        pruneIncoming(incoming, 20); // cap cached copies so they don't pile up forever
         return out;
+    }
+
+    // keep only the newest `keep` cached copies; delete older ones to bound cache growth
+    private void pruneIncoming(File incoming, int keep) {
+        try {
+            File[] dirs = incoming.listFiles(File::isDirectory);
+            if (dirs == null || dirs.length <= keep) return;
+            java.util.Arrays.sort(dirs, (a, b) -> Long.compare(b.lastModified(), a.lastModified()));
+            for (int i = keep; i < dirs.length; i++) deleteRecursive(dirs[i]);
+        } catch (Exception ignored) {}
+    }
+    private void deleteRecursive(File f) {
+        File[] kids = f.listFiles();
+        if (kids != null) for (File k : kids) deleteRecursive(k);
+        f.delete();
     }
 
     private String guessMime(String name) {
