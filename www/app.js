@@ -191,13 +191,13 @@
   let curBlobUrl = null;   // current image blob URL — revoked before next open
   let pdfRerender = null;  // re-renders visible PDF pages at higher resolution when zoomed
   let hwpRerender = null;  // re-renders visible HWP pages after zoom (IO can miss zoom-driven changes)
-  let pptxPreviewer = null; // current pptx-preview instance — destroyed before next open
+
   function freeResources() {
     if (pdfDoc) { try { pdfDoc.destroy(); } catch (e) {} pdfDoc = null; }
     if (curBlobUrl) { try { URL.revokeObjectURL(curBlobUrl); } catch (e) {} curBlobUrl = null; }
     pdfRerender = null;
     hwpRerender = null;
-    if (pptxPreviewer) { try { pptxPreviewer.destroy(); } catch (e) {} pptxPreviewer = null; }
+
     xlsxSheetEls = [];
     if (rhwpDoc) { try { rhwpDoc.free(); } catch (e) {} rhwpDoc = null; }
   }
@@ -714,204 +714,49 @@
   }
 
   // --- PowerPoint (static preview, vertical slide list + handoff to PowerPoint) ---
-  // temporary on-screen debug panel (PPT diagnostics) — tap to dismiss
-  function pptDbg(host, line) {
-    let box = document.getElementById('ppt-dbg');
-    if (!box) {
-      box = document.createElement('div');
-      box.id = 'ppt-dbg';
-      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;z-index:99999;'
-        + 'background:rgba(0,20,40,0.92);color:#8fe;font:11px/1.45 monospace;padding:8px 10px;white-space:pre-wrap';
-      box.addEventListener('click', () => box.remove());
-      if (document.body) document.body.appendChild(box);
-    }
-    box.textContent += line + '\n';
-    box.scrollTop = box.scrollHeight;
-  }
-
-  // On-device black diagnostic: scan a grid over the viewport; for each sample, walk the
-  // element stack under that point and report the first ancestor with a non-transparent bg.
-  // Tells us WHICH layer (canvas / slide / wrapper / body) is painting black on the phone.
-  function runPptDiag() {
-    const host = document.getElementById('pptx-wrapper');
-    const box = document.getElementById('ppt-dbg') || (function () { pptDbg(host, ''); return document.getElementById('ppt-dbg'); })();
-    const W = window.innerWidth, H = window.innerHeight;
-    const lines = ['[DIAG] viewport ' + W + 'x' + H];
-    const seen = {};
-    for (let gy = 0.12; gy < 0.95; gy += 0.14) {
-      for (let gx = 0.15; gx < 1; gx += 0.2) {
-        const x = Math.round(W * gx), y = Math.round(H * gy);
-        const stack = (document.elementsFromPoint ? document.elementsFromPoint(x, y) : [document.elementFromPoint(x, y)]).filter(Boolean);
-        // find first layer with an opaque-ish background
-        for (const el of stack) {
-          const cs = getComputedStyle(el);
-          const bg = cs.backgroundColor;
-          if (bg && bg !== 'rgba(0, 0, 0, 0)' && bg !== 'transparent') {
-            const tag = el.tagName + '.' + (typeof el.className === 'string' ? el.className.replace(/\s+/g, '.').slice(0, 22) : '');
-            const key = tag + '|' + bg;
-            seen[key] = (seen[key] || 0) + 1;
-            break;
-          }
-        }
-      }
-    }
-    Object.keys(seen).sort((a, b) => seen[b] - seen[a]).forEach((k) => lines.push('  ' + seen[k] + '×  ' + k));
-    // also count canvases and their computed bg
-    if (host) {
-      const cvs = host.querySelectorAll('canvas');
-      let cbg = {};
-      cvs.forEach((c) => { const b = getComputedStyle(c).backgroundColor; cbg[b] = (cbg[b] || 0) + 1; });
-      lines.push('[DIAG] canvases=' + cvs.length + '  ' + Object.keys(cbg).map((k) => cbg[k] + '×' + k).join('  '));
-    }
-    lines.forEach((l) => pptDbg(host, l));
-  }
-
-
+  // We do NOT render PowerPoint in-app: pptx-preview mis-renders on real phone WebViews
+  // (black bands, dropped master/layout graphics, broken text/layout) and there is no offline
+  // engine to convert PPTX → PDF on-device. So we show the file's embedded first-slide thumbnail
+  // (present in every PowerPoint-saved .pptx) plus slide info, and hand off to a real app for viewing.
   async function renderPptx(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
     if (seq !== openSeq) return;
     els.content.innerHTML = '';
-    const note = document.createElement('div');
-    note.className = 'hwpx-note';
-    note.textContent = '슬라이드 렌더링 중… 용량이 크면 시간이 걸릴 수 있어요.';
-    els.content.appendChild(note);
-    const host = document.createElement('div');
-    host.id = 'pptx-wrapper';
-    els.content.appendChild(host);
     show('content');
-    showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>'
-      + '<button class="iconbtn" id="ppt-diag" style="margin-top:6px">🩺 검정 진단</button>');
-    const w = Math.min(els.content.clientWidth || window.innerWidth, 1280) - 8;
-    const dpr0 = window.devicePixelRatio || 1;
-    pptDbg(host, '[PPT] start  file=' + (data.byteLength / 1048576).toFixed(1) + 'MB  width=' + w + '  dpr=' + dpr0);
-    pptxPreviewer = window.pptxInit(host, { width: w, mode: 'list' });
+    showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint · 한컴 등으로 열기</button>');
+
+    let slideCount = 0, thumbUrl = '';
     try {
-      const t0 = Date.now();
-      await pptxPreviewer.preview(data);
-      if (seq !== openSeq) return;
-      pptDbg(host, '[PPT] preview done in ' + (Date.now() - t0) + 'ms');
-      // measure images: total, broken(decode-failed → likely black), oversized
-      const imgs = Array.from(host.querySelectorAll('img'));
-      let broken = 0, over = 0, maxMP = 0, sumMP = 0;
-      for (const im of imgs) {
-        try { if (!im.complete) await im.decode().catch(() => {}); } catch (e) {}
-        const mp = (im.naturalWidth * im.naturalHeight) / 1e6;
-        sumMP += mp; if (mp > maxMP) maxMP = mp;
-        if (!im.naturalWidth || !im.naturalHeight) broken++;
-        else if (im.naturalWidth > 1400) over++;
+      const zip = window.JVUnzip(new Uint8Array(data));
+      for (const k in zip) { if (/^ppt\/slides\/slide\d+\.xml$/.test(k)) slideCount++; }
+      // embedded thumbnail is the first slide, written by PowerPoint/Keynote/LibreOffice on save
+      const thumbKey = Object.keys(zip).find((k) => /docProps\/thumbnail\.(jpe?g|png|emf)$/i.test(k));
+      if (thumbKey && /\.(jpe?g|png)$/i.test(thumbKey)) {
+        const bytes = zip[thumbKey];
+        let bin = '';
+        for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
+        const mime = /png$/i.test(thumbKey) ? 'image/png' : 'image/jpeg';
+        thumbUrl = 'data:' + mime + ';base64,' + btoa(bin);
       }
-      pptDbg(host, '[PPT] imgs=' + imgs.length + '  broken(decode-fail)=' + broken
-        + '  >1400px=' + over + '  maxMP=' + maxMP.toFixed(1) + '  sumMP=' + sumMP.toFixed(0));
-      await downscalePptxImages(host, seq, (m) => pptDbg(host, m));
-      if (seq !== openSeq) return;
-      // Bake each slide DOM into a single flat image. pptx-preview stacks master/layout/content
-      // as absolutely-positioned transform:scale() layers; some phone WebViews fail to composite
-      // those layers (black bands, missing layout graphics). Flattening every slide to one image
-      // sidesteps GPU compositing entirely — the same reason PDF/HWP (canvas) never go black.
-      // Safe because downscalePptxImages already turned every <img> into an inline dataURL, so
-      // the foreignObject render is not tainted.
-      try {
-        const baked = await bakePptxSlides(host, seq, (m) => pptDbg(host, m));
-        pptDbg(host, '[PPT] baked slides=' + baked.ok + '/' + baked.total + '  failed=' + baked.failed);
-      } catch (e) { pptDbg(host, '[PPT] bake err: ' + (e && e.message)); }
-      // Make the scroll container app-bg so inter-slide gaps read as a clean dark divider, not raw black.
-      try {
-        const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
-        host.style.background = appBg;
-        els.content.style.background = appBg;
-        $('viewer').style.background = appBg;
-      } catch (e) {}
-      pptDbg(host, '[PPT] done.');
-    } catch (e) {
-      pptDbg(host, '[PPT] ERROR: ' + (e && (e.message || e)));
-    } finally { if (seq === openSeq) note.remove(); }
-  }
+    } catch (e) {}
+    if (seq !== openSeq) return;
 
-  // Flatten each pptx-preview slide (master + layout + content layers) into a single <img>.
-  // Uses SVG <foreignObject> to rasterize the slide subtree, drawn onto a 2x canvas for zoom
-  // headroom, then swaps the live slide node for a plain image so the phone GPU only composites
-  // one bitmap per slide (no transform-layer compositing bugs → no black bands, no lost layout).
-  async function bakePptxSlides(host, seq, log) {
-    const slides = Array.from(host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]'));
-    const OVERSAMPLE = 3; // render at 3x slide CSS size for crisp zoom-in
-    let ok = 0, failed = 0;
-    for (const slide of slides) {
-      if (seq !== openSeq) return { ok, failed, total: slides.length };
-      try {
-        const rect = slide.getBoundingClientRect();
-        const W = Math.round(rect.width), H = Math.round(rect.height);
-        if (!W || !H) { failed++; continue; }
-        const clone = slide.cloneNode(true);
-        clone.style.margin = '0';
-        clone.style.background = '#fff';
-        const xml = new XMLSerializer().serializeToString(clone);
-        const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + W + '" height="' + H + '">'
-          + '<foreignObject width="100%" height="100%">'
-          + '<div xmlns="http://www.w3.org/1999/xhtml">' + xml + '</div></foreignObject></svg>';
-        const svgImg = new Image();
-        const state = await new Promise((res) => {
-          svgImg.onload = () => res('ok');
-          svgImg.onerror = () => res('err');
-          setTimeout(() => res('timeout'), 6000);
-          svgImg.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
-        });
-        if (state !== 'ok') { failed++; continue; }
-        const cv = document.createElement('canvas');
-        cv.width = W * OVERSAMPLE; cv.height = H * OVERSAMPLE;
-        const ctx = cv.getContext('2d');
-        ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, cv.width, cv.height);
-        ctx.scale(OVERSAMPLE, OVERSAMPLE);
-        ctx.drawImage(svgImg, 0, 0, W, H);
-        const url = cv.toDataURL('image/jpeg', 0.92);
-        const flat = document.createElement('img');
-        flat.src = url;
-        flat.className = 'pptx-baked-slide';
-        flat.style.cssText = 'display:block;width:' + W + 'px;height:' + H + 'px;margin:0 auto 12px';
-        slide.replaceWith(flat);
-        ok++;
-        await new Promise((r) => setTimeout(r, 0));
-      } catch (e) { failed++; }
-    }
-    return { ok, failed, total: slides.length };
-  }
-
-  // Re-encode EVERY pptx <img> through a canvas to a plain RGBA PNG. Two fixes at once:
-  //  (1) some phone WebViews render palette-PNG + tRNS transparency as BLACK — re-encoding to
-  //      straight RGBA makes transparent areas transparent again (the "black half" bug).
-  //  (2) oversized bitmaps are downscaled to ~display size to cut decode memory.
-  async function downscalePptxImages(host, seq, log) {
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const imgs = Array.from(host.querySelectorAll('img'));
-    let reenc = 0, scaled = 0, failed = 0, decodeFailed = 0;
-    for (const img of imgs) {
-      if (seq !== openSeq) return;
-      try {
-        if (!img.complete) { await img.decode().catch(() => {}); }
-        const nw = img.naturalWidth, nh = img.naturalHeight;
-        if (!nw || !nh) { decodeFailed++; continue; }
-        const rect = img.getBoundingClientRect();
-        // keep resolution headroom for zoom-in: target = display width × dpr × zoom headroom,
-        // but never upscale beyond the source and never exceed a memory cap.
-        const ZOOM_HEADROOM = 3;
-        const MAX_W = 2200; // per-image width cap (bounds memory even for big source images)
-        const wantW = Math.round((rect.width || nw) * dpr * ZOOM_HEADROOM);
-        const targetW = Math.min(nw, wantW, MAX_W);   // don't upscale past source; cap for memory
-        const scale = targetW < nw ? targetW / nw : 1; // shrink only when source is larger than target
-        if (scale < 1) scaled++;
-        const cw = Math.max(1, Math.round(nw * scale));
-        const ch = Math.max(1, Math.round(nh * scale));
-        const cv = document.createElement('canvas');
-        cv.width = cw; cv.height = ch;
-        const ctx = cv.getContext('2d');
-        ctx.clearRect(0, 0, cw, ch);            // keep transparency (don't paint black)
-        ctx.drawImage(img, 0, 0, cw, ch);
-        img.src = cv.toDataURL('image/png');     // → plain RGBA PNG; transparent stays transparent
-        reenc++;
-        await new Promise((r) => setTimeout(r, 0));
-      } catch (e) { failed++; }
-    }
-    if (log) log('[PPT] reencoded=' + reenc + '  downscaled=' + scaled + '  failed=' + failed + '  decodeFailedImgs=' + decodeFailed);
+    const wrap = document.createElement('div');
+    wrap.className = 'ppt-landing';
+    const name = (file && (file.name || file.displayName)) || 'PowerPoint';
+    wrap.innerHTML =
+      '<div class="ppt-card">'
+      + (thumbUrl
+          ? '<img class="ppt-thumb" src="' + thumbUrl + '" alt="첫 슬라이드 미리보기">'
+          : '<div class="ppt-thumb ppt-thumb-none">📊</div>')
+      + '<div class="ppt-meta">'
+      + '<div class="ppt-title">' + name.replace(/[<>&]/g, '') + '</div>'
+      + '<div class="ppt-sub">슬라이드 ' + (slideCount || '?') + '장 · 첫 장 미리보기</div>'
+      + '<div class="ppt-note">파워포인트는 이 앱에서 정확히 못 그려서 미리보기만 보여줘. 아래 버튼으로 파워포인트·한컴 등 실제 앱에서 열면 완벽하게 볼 수 있어.</div>'
+      + '<button class="iconbtn ppt-open-big" id="ppt-open-ext2">▶ 다른 앱으로 열기</button>'
+      + '</div></div>';
+    els.content.appendChild(wrap);
   }
 
   // --- Text ---
@@ -1040,8 +885,7 @@
     const id = e.target.id;
     if (id === 'btn-open' || id === 'btn-open2') pickFile();
     else if (id === 'btn-home') goHome();
-    else if (id === 'btn-forward' || id === 'ppt-open-ext') doForward();
-    else if (id === 'ppt-diag') runPptDiag();
+    else if (id === 'btn-forward' || id === 'ppt-open-ext' || id === 'ppt-open-ext2') doForward();
     else if (id === 'btn-share') doShare();
     else if (id === 'btn-search') openSearch();
     else if (id === 'search-prev') gotoMatch(curMatch - 1);
