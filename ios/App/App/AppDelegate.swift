@@ -34,6 +34,17 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ app: UIApplication, open url: URL, options: [UIApplication.OpenURLOptionsKey: Any] = [:]) -> Bool {
+        // Incoming document ("Open in OneView" from Files/Mail/etc.) — route to FileBridge,
+        // which copies it into the app cache and hands it to the web layer.
+        if url.isFileURL {
+            if let plugin = FileBridgePlugin.shared {
+                // copy off the main thread to avoid blocking on large files
+                DispatchQueue.global(qos: .userInitiated).async { plugin.handleIncomingURL(url) }
+            } else {
+                FileBridgePlugin.pendingURL = url
+            }
+            return true
+        }
         // Called when the app was launched with a url. Feel free to add additional processing here,
         // but if you want the App API to support tracking app url opens, make sure to keep this call
         return ApplicationDelegateProxy.shared.application(app, open: url, options: options)
