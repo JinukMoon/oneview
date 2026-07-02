@@ -714,6 +714,22 @@
   }
 
   // --- PowerPoint (static preview, vertical slide list + handoff to PowerPoint) ---
+  // temporary on-screen debug panel (PPT diagnostics) — tap to dismiss
+  function pptDbg(host, line) {
+    let box = document.getElementById('ppt-dbg');
+    if (!box) {
+      box = document.createElement('div');
+      box.id = 'ppt-dbg';
+      box.style.cssText = 'position:fixed;left:0;right:0;bottom:0;max-height:45%;overflow:auto;z-index:99999;'
+        + 'background:rgba(0,20,40,0.92);color:#8fe;font:11px/1.45 monospace;padding:8px 10px;white-space:pre-wrap';
+      box.addEventListener('click', () => box.remove());
+      if (document.body) document.body.appendChild(box);
+    }
+    box.textContent += line + '\n';
+    box.scrollTop = box.scrollHeight;
+  }
+
+
   async function renderPptx(file) {
     const seq = openSeq;
     const data = await fetchBytes(file);
@@ -729,44 +745,60 @@
     show('content');
     showActionBar('<button class="iconbtn" id="ppt-open-ext">▶ PowerPoint로 열기 (애니메이션·슬라이드쇼)</button>');
     const w = Math.min(els.content.clientWidth || window.innerWidth, 1280) - 8;
-    // mode 'list' = every slide stacked vertically; OMIT height so the wrapper is not
-    // clamped to one-slide height with inner overflow (that caused the "small box" view) — it grows to fit all slides
+    const dpr0 = window.devicePixelRatio || 1;
+    pptDbg(host, '[PPT] start  file=' + (data.byteLength / 1048576).toFixed(1) + 'MB  width=' + w + '  dpr=' + dpr0);
     pptxPreviewer = window.pptxInit(host, { width: w, mode: 'list' });
     try {
+      const t0 = Date.now();
       await pptxPreviewer.preview(data);
       if (seq !== openSeq) return;
-      // pptx-preview inlines EVERY image as full-res base64. Huge decks (many multi-megapixel
-      // PNGs) exhaust WebView memory on phones → some images fail to decode and show as black.
-      // Downscale each rendered <img> to roughly its on-screen size to slash decode memory.
-      await downscalePptxImages(host, seq);
-    }
-    finally { if (seq === openSeq) note.remove(); }
+      pptDbg(host, '[PPT] preview done in ' + (Date.now() - t0) + 'ms');
+      // measure images: total, broken(decode-failed → likely black), oversized
+      const imgs = Array.from(host.querySelectorAll('img'));
+      let broken = 0, over = 0, maxMP = 0, sumMP = 0;
+      for (const im of imgs) {
+        try { if (!im.complete) await im.decode().catch(() => {}); } catch (e) {}
+        const mp = (im.naturalWidth * im.naturalHeight) / 1e6;
+        sumMP += mp; if (mp > maxMP) maxMP = mp;
+        if (!im.naturalWidth || !im.naturalHeight) broken++;
+        else if (im.naturalWidth > 1400) over++;
+      }
+      pptDbg(host, '[PPT] imgs=' + imgs.length + '  broken(decode-fail)=' + broken
+        + '  >1400px=' + over + '  maxMP=' + maxMP.toFixed(1) + '  sumMP=' + sumMP.toFixed(0));
+      await downscalePptxImages(host, seq, (m) => pptDbg(host, m));
+      pptDbg(host, '[PPT] downscale done. If a slide is still black, tell me the numbers above.');
+    } catch (e) {
+      pptDbg(host, '[PPT] ERROR: ' + (e && (e.message || e)));
+    } finally { if (seq === openSeq) note.remove(); }
   }
 
   // Re-encode oversized pptx <img> bitmaps down to their display size (× device pixel ratio, capped),
   // freeing the giant source bitmaps so memory-limited WebViews stop dropping images to black.
-  async function downscalePptxImages(host, seq) {
+  async function downscalePptxImages(host, seq, log) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const imgs = Array.from(host.querySelectorAll('img'));
+    let done = 0, failed = 0, skippedBlack = 0;
     for (const img of imgs) {
       if (seq !== openSeq) return;
       try {
         if (!img.complete) { await img.decode().catch(() => {}); }
         const nw = img.naturalWidth, nh = img.naturalHeight;
-        if (!nw || !nh) continue;
+        if (!nw || !nh) { skippedBlack++; continue; } // decode failed → can't fix by scaling
         const rect = img.getBoundingClientRect();
         const targetW = Math.max(1, Math.round((rect.width || nw) * dpr));
-        if (nw <= targetW * 1.5) continue;            // already small enough
+        if (nw <= targetW * 1.5) continue;
         const scale = targetW / nw;
         const cw = Math.max(1, Math.round(nw * scale));
         const ch = Math.max(1, Math.round(nh * scale));
         const cv = document.createElement('canvas');
         cv.width = cw; cv.height = ch;
         cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
-        img.src = cv.toDataURL('image/png');           // small bitmap replaces the multi-MP source
-        await new Promise((r) => setTimeout(r, 0));     // yield so GC can reclaim between images
-      } catch (e) { /* leave original img on any failure */ }
+        img.src = cv.toDataURL('image/png');
+        done++;
+        await new Promise((r) => setTimeout(r, 0));
+      } catch (e) { failed++; }
     }
+    if (log) log('[PPT] downscaled=' + done + '  failed=' + failed + '  decodeFailedImgs=' + skippedBlack);
   }
 
   // --- Text ---
