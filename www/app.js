@@ -732,8 +732,41 @@
     // mode 'list' = every slide stacked vertically; OMIT height so the wrapper is not
     // clamped to one-slide height with inner overflow (that caused the "small box" view) — it grows to fit all slides
     pptxPreviewer = window.pptxInit(host, { width: w, mode: 'list' });
-    try { await pptxPreviewer.preview(data); if (seq !== openSeq) return; }
+    try {
+      await pptxPreviewer.preview(data);
+      if (seq !== openSeq) return;
+      // pptx-preview inlines EVERY image as full-res base64. Huge decks (many multi-megapixel
+      // PNGs) exhaust WebView memory on phones → some images fail to decode and show as black.
+      // Downscale each rendered <img> to roughly its on-screen size to slash decode memory.
+      await downscalePptxImages(host, seq);
+    }
     finally { if (seq === openSeq) note.remove(); }
+  }
+
+  // Re-encode oversized pptx <img> bitmaps down to their display size (× device pixel ratio, capped),
+  // freeing the giant source bitmaps so memory-limited WebViews stop dropping images to black.
+  async function downscalePptxImages(host, seq) {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const imgs = Array.from(host.querySelectorAll('img'));
+    for (const img of imgs) {
+      if (seq !== openSeq) return;
+      try {
+        if (!img.complete) { await img.decode().catch(() => {}); }
+        const nw = img.naturalWidth, nh = img.naturalHeight;
+        if (!nw || !nh) continue;
+        const rect = img.getBoundingClientRect();
+        const targetW = Math.max(1, Math.round((rect.width || nw) * dpr));
+        if (nw <= targetW * 1.5) continue;            // already small enough
+        const scale = targetW / nw;
+        const cw = Math.max(1, Math.round(nw * scale));
+        const ch = Math.max(1, Math.round(nh * scale));
+        const cv = document.createElement('canvas');
+        cv.width = cw; cv.height = ch;
+        cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
+        img.src = cv.toDataURL('image/png');           // small bitmap replaces the multi-MP source
+        await new Promise((r) => setTimeout(r, 0));     // yield so GC can reclaim between images
+      } catch (e) { /* leave original img on any failure */ }
+    }
   }
 
   // --- Text ---
