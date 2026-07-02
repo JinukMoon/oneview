@@ -66,6 +66,8 @@ OneView는 **하나의 진입점**에서 대부분을 직접 열고, 직접 못 
 
 ## 빌드
 
+### Android
+
 요구: **Node 18+, JDK 17, Android SDK (platform-34, build-tools 34).**
 
 ```bash
@@ -77,6 +79,20 @@ cd android && ./gradlew assembleDebug
 ```
 
 `www/`(HTML·CSS·JS)만 고쳤다면 `node build.mjs`는 생략하고 `npx cap copy android` 후 다시 빌드하면 됩니다.
+
+### iOS
+
+요구: **Node 18+, macOS + Xcode 15+, CocoaPods.**
+
+```bash
+npm install
+node build.mjs            # 뷰어 라이브러리 번들 + pdf.js cmaps/폰트 복사 → www/vendor/
+npx cap sync ios          # 웹 자산 동기화 + pod install
+npx cap open ios          # Xcode에서 열림 → Signing 설정 후 Run
+```
+
+기기/시뮬레이터 실행에는 Xcode 서명이 필요합니다(개인 Apple ID 무료 서명으로 충분).
+뷰어 코어는 Android와 동일한 웹 번들을 그대로 사용하며, 네이티브 브릿지(`FileBridge`)만 Swift로 구현되어 있습니다(`ios/App/App/FileBridgePlugin.swift`).
 
 ---
 
