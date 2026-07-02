@@ -772,33 +772,37 @@
     } finally { if (seq === openSeq) note.remove(); }
   }
 
-  // Re-encode oversized pptx <img> bitmaps down to their display size (× device pixel ratio, capped),
-  // freeing the giant source bitmaps so memory-limited WebViews stop dropping images to black.
+  // Re-encode EVERY pptx <img> through a canvas to a plain RGBA PNG. Two fixes at once:
+  //  (1) some phone WebViews render palette-PNG + tRNS transparency as BLACK — re-encoding to
+  //      straight RGBA makes transparent areas transparent again (the "black half" bug).
+  //  (2) oversized bitmaps are downscaled to ~display size to cut decode memory.
   async function downscalePptxImages(host, seq, log) {
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const imgs = Array.from(host.querySelectorAll('img'));
-    let done = 0, failed = 0, skippedBlack = 0;
+    let reenc = 0, scaled = 0, failed = 0, decodeFailed = 0;
     for (const img of imgs) {
       if (seq !== openSeq) return;
       try {
         if (!img.complete) { await img.decode().catch(() => {}); }
         const nw = img.naturalWidth, nh = img.naturalHeight;
-        if (!nw || !nh) { skippedBlack++; continue; } // decode failed → can't fix by scaling
+        if (!nw || !nh) { decodeFailed++; continue; }
         const rect = img.getBoundingClientRect();
         const targetW = Math.max(1, Math.round((rect.width || nw) * dpr));
-        if (nw <= targetW * 1.5) continue;
-        const scale = targetW / nw;
+        const scale = nw > targetW * 1.5 ? targetW / nw : 1; // downscale big ones; others stay 1:1
+        if (scale < 1) scaled++;
         const cw = Math.max(1, Math.round(nw * scale));
         const ch = Math.max(1, Math.round(nh * scale));
         const cv = document.createElement('canvas');
         cv.width = cw; cv.height = ch;
-        cv.getContext('2d').drawImage(img, 0, 0, cw, ch);
-        img.src = cv.toDataURL('image/png');
-        done++;
+        const ctx = cv.getContext('2d');
+        ctx.clearRect(0, 0, cw, ch);            // keep transparency (don't paint black)
+        ctx.drawImage(img, 0, 0, cw, ch);
+        img.src = cv.toDataURL('image/png');     // → plain RGBA PNG; transparent stays transparent
+        reenc++;
         await new Promise((r) => setTimeout(r, 0));
       } catch (e) { failed++; }
     }
-    if (log) log('[PPT] downscaled=' + done + '  failed=' + failed + '  decodeFailedImgs=' + skippedBlack);
+    if (log) log('[PPT] reencoded=' + reenc + '  downscaled=' + scaled + '  failed=' + failed + '  decodeFailedImgs=' + decodeFailed);
   }
 
   // --- Text ---
