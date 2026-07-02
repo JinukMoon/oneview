@@ -815,27 +815,24 @@
       $('viewer').style.background = appBg;
       let whitened = 0;
       host.querySelectorAll('[class*="pptx-preview-slide-wrapper"]').forEach((s) => {
-        s.style.background = '#fff';
-        s.style.margin = '0 auto';               // drop the 10px inter-slide gap that showed as a black band
-        // Some phone GPUs promote transform:scale subtrees to a hardware layer whose backdrop
-        // renders BLACK. Force an opaque own-backdrop and defeat layer-isolation quirks.
-        s.style.isolation = 'isolate';
-        s.style.backgroundColor = '#fff';
+        // Do NOT paint the slide itself white — pptx-preview stacks master/layout background
+        // graphics (banners, crests, logos) UNDER the content, and an opaque white on the
+        // slide wrapper hides all of them.
+        // Keep a clean gap BETWEEN slides (app-bg color, not raw black) so slides read as separate.
+        s.style.margin = '0 auto 12px';
         s.style.backfaceVisibility = 'visible';
         s.style.willChange = 'auto';
-        whitened++;
-      });
-      // Inner slide containers → opaque white so nothing underneath shows through as black.
-      let innerFixed = 0;
-      host.querySelectorAll('.slide-wrapper, .slide-background, .slide-content').forEach((n) => {
-        if (getComputedStyle(n).backgroundColor === 'rgba(0, 0, 0, 0)') { n.style.backgroundColor = '#fff'; innerFixed++; }
+        // The bottom-most .slide-background layer is what should be opaque white so empty
+        // areas (and transparent regions on hardware-composited WebViews) aren't black.
+        const bg = s.querySelector('.slide-background');
+        if (bg) { bg.style.backgroundColor = '#fff'; whitened++; }
       });
       // pptx-preview draws shapes/charts onto <canvas> via zrender. A transparent canvas
       // composited on some phone GPUs shows up BLACK. Give every slide canvas a white backing.
       let canvasFixed = 0;
       host.querySelectorAll('canvas').forEach((c) => { c.style.background = '#fff'; canvasFixed++; });
-      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slides→white=' + whitened
-        + '  inner=' + innerFixed + '  canvas=' + canvasFixed + '  gaps removed');
+      pptDbg(host, '[PPT] bg forced: wrapper=' + (wrapEl ? appBg : 'none') + '  slide-bg→white=' + whitened
+        + '  canvas=' + canvasFixed + '  gap kept');
     } catch (e) { pptDbg(host, '[PPT] bg force err: ' + (e && e.message)); }
       pptDbg(host, '[PPT] done. If still black, tell me the numbers above.');
     } catch (e) {
