@@ -292,7 +292,7 @@
 
     const total = pdf.numPages;
     const cssWidth = Math.min(container.clientWidth || window.innerWidth, 1400);
-    const baseDpr = Math.min(window.devicePixelRatio || 1, 3);
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 2); // base res (zoom re-render sharpens further; keep phone memory sane)
     const MAX_CANVAS_W = 3000; // cap backing store to bound memory during zoom re-render
 
     const page1 = await pdf.getPage(1);
@@ -406,7 +406,7 @@
     if (img.complete && img.naturalWidth) applyFit();
   }
 
-  // --- HWP / HWPX (via @rhwp/core WASM — full vector SVG render) ---
+  // --- HWP / HWPX (via @rhwp/core WASM — canvas raster render, re-rendered on zoom for sharpness) ---
   let rhwpReady = false;
   let rhwpInitPromise = null;
   let rhwpDoc = null; // current HWP document (WASM) — freed before opening another
@@ -417,20 +417,6 @@
       rhwpInitPromise = window.rhwpInit('vendor/rhwp_bg.wasm').then(() => { rhwpReady = true; });
     }
     await rhwpInitPromise;
-  }
-  function fixSvg(svgEl) {
-    if (!svgEl) return;
-    // ensure aspect-preserving scale to container width
-    if (!svgEl.getAttribute('viewBox')) {
-      const w = parseFloat(svgEl.getAttribute('width'));
-      const h = parseFloat(svgEl.getAttribute('height'));
-      if (w && h) svgEl.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
-    }
-    svgEl.removeAttribute('width');
-    svgEl.removeAttribute('height');
-    svgEl.style.width = '100%';
-    svgEl.style.height = 'auto';
-    svgEl.style.display = 'block';
   }
   async function renderHwp(file) {
     const seq = openSeq;
@@ -446,46 +432,51 @@
     show('content');
     showActionBar('<button class="iconbtn" id="ppt-open-ext">다른 앱으로 열기 (한컴 등)</button>');
 
-    // estimate page aspect ratio from page 0 for placeholders
-    const probe = document.createElement('div');
-    probe.innerHTML = doc.renderPageSvg(0);
-    const svg0 = probe.querySelector('svg');
-    let vbW = 595, vbH = 842;
-    if (svg0) {
-      if (svg0.viewBox && svg0.viewBox.baseVal && svg0.viewBox.baseVal.width) {
-        vbW = svg0.viewBox.baseVal.width; vbH = svg0.viewBox.baseVal.height;
-      } else {
-        vbW = parseFloat(svg0.getAttribute('width')) || vbW;
-        vbH = parseFloat(svg0.getAttribute('height')) || vbH;
-      }
-    }
     const cssW = Math.min(container.clientWidth || window.innerWidth, 1400) - 12;
-    const phH = Math.round(vbH * (cssW / vbW));
+    const baseDpr = Math.min(window.devicePixelRatio || 1, 2); // base res (zoom re-render sharpens further; keep phone memory sane)
+    const MAX_CANVAS_W = 3000; // cap backing width to bound memory during zoom re-render
 
+    // reference page pixel size (page 0 at scale 1) → aspect estimate + scale math
+    let refW = 595, refH = 842;
+    try {
+      const probe = document.createElement('canvas');
+      doc.renderPageToCanvas(0, probe, 1);
+      if (probe.width && probe.height) { refW = probe.width; refH = probe.height; }
+    } catch (e) {}
+    const phH = Math.round(refH * (cssW / refW));
+    // render scale: fit-to-width baseline × quality (dpr × zoom), capped by max canvas width
+    function scaleFor() {
+      const targetW = Math.min(cssW * baseDpr * Math.max(1, zoom), MAX_CANVAS_W);
+      return targetW / refW;
+    }
 
     const rendered = new Set();
     function renderHwpPage(n, ph) {
-      if (rendered.has(n)) return;
-      rendered.add(n);
+      const scale = scaleFor();
+      if (ph.firstChild && ph._rs >= scale) return; // already rendered at >= this quality
       try {
-        const holder = document.createElement('div');
-        holder.innerHTML = doc.renderPageSvg(n);
-        const svg = holder.querySelector('svg');
-        fixSvg(svg);
+        const canvas = document.createElement('canvas');
+        doc.renderPageToCanvas(n, canvas, scale); // canvas rasterises text at target res (no SVG-text zoom garble)
+        canvas.style.width = '100%';
+        canvas.style.height = 'auto';
+        canvas.style.display = 'block';
         ph.innerHTML = '';
-        ph.appendChild(svg || holder);
-        ph.style.height = 'auto'; // fit the real page height (pages vary), no clipping
-      } catch (e) { ph.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; }
+        ph.appendChild(canvas);
+        ph.style.height = 'auto';
+        ph._rs = scale;
+        rendered.add(n);
+      } catch (e) { ph.innerHTML = '<div class="hwpx-note">이 페이지를 표시할 수 없어요</div>'; rendered.add(n); }
     }
     const lazy = new IntersectionObserver((entries) => {
       entries.forEach((en) => {
         const n = +en.target.dataset.page;
         if (en.isIntersecting) {
-          renderHwpPage(n, en.target);
+          if (!rendered.has(n)) renderHwpPage(n, en.target);
         } else if (rendered.has(n)) {
-          // evict offscreen page (freeze height first to avoid scroll jump) to cap memory
+          // evict offscreen page (freeze measured, de-scaled height to avoid scroll jump)
           en.target.style.height = (en.target.getBoundingClientRect().height / zoom) + 'px';
           en.target.innerHTML = '';
+          en.target._rs = 0;
           rendered.delete(n);
         }
       });
@@ -505,15 +496,12 @@
       lazy.observe(ph);
       curObs.observe(ph);
     }
+    // after zoom settles, re-render visible pages at the new (higher) scale for sharpness
     hwpRerender = () => {
       const vr = $('viewer').getBoundingClientRect();
       container.querySelectorAll('.hwp-svg-page').forEach((ph) => {
         const r = ph.getBoundingClientRect();
-        if (r.bottom > vr.top - 1500 && r.top < vr.bottom + 1500) {
-          const n = +ph.dataset.page;
-          if (rendered.has(n)) ph.style.height = 'auto'; // repair any clipped/frozen height after zoom
-          else renderHwpPage(n, ph);
-        }
+        if (r.bottom > vr.top - 1500 && r.top < vr.bottom + 1500) renderHwpPage(+ph.dataset.page, ph);
       });
     };
     if (els.pageind) { els.pageind.textContent = '1 / ' + total; els.pageind.classList.remove('hidden'); }
