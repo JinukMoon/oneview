@@ -179,11 +179,9 @@ html, body {
   cursor: pointer;
 }
 .sheet-tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-#pptx-wrapper { margin: 10px auto; }
-/* pptx-preview paints its wrapper (and sometimes host) black; recolor every pptx container to the
-   app bg so inter-slide gaps / side margins never show as a black overlay. Slides keep their own white. */
-#pptx-wrapper,
-#pptx-wrapper .pptx-preview-wrapper { background: var(--bg) !important; }
+/* Self PPTX renderer: per-slide <canvas> stacked vertically; app-bg gaps. */
+#pptx-wrapper { margin: 10px auto; background: var(--bg); }
+.pptx-slide-canvas { background: #fff; }
 .hwpx-note { color: #888; font-size: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
 
 /* docx-preview wrapper */

@@ -26,3 +26,7 @@ www/_hwp/
 www/_testfiles/
 www/rendertest.html
 /tmp/shot_*.png
+
+# local QA artifacts / agent runtime state
+artifacts/
+.gjc/
