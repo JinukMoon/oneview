@@ -32,8 +32,26 @@
     return new Promise(function (resolve) {
       var input = document.createElement('input');
       input.type = 'file';
-      // No `accept` filter: OneView sniffs by extension/magic and forwards the rest,
-      // so let the user pick anything from their storage / iCloud / photos.
+      // Steer the OS toward the FILE BROWSER (Files app / document provider), not the
+      // photo gallery. Listing document extensions + MIME types in `accept` makes iOS
+      // open the Files picker and Android surface storage/Drive/Downloads providers.
+      // Images are included too (OneView can view them) but documents lead the list.
+      // NEVER set `capture` — that would force the camera.
+      input.setAttribute('accept', [
+        // documents (lead the list so a file browser is offered first)
+        '.pdf', '.hwp', '.hwpx', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx',
+        '.txt', '.csv', '.md', '.json', '.xml', '.rtf', '.log', '.tsv',
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+        'application/msword', 'application/vnd.ms-excel', 'application/vnd.ms-powerpoint',
+        'text/plain', 'text/csv',
+        // images last — individual extensions only. Intentionally NO `image/*`
+        // wildcard: on iOS/Android that wildcard makes the OS default to the photo
+        // gallery instead of the file browser, which is exactly the bug being fixed.
+        '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.svg',
+      ].join(','));
       input.style.position = 'fixed';
       input.style.left = '-9999px';
       document.body.appendChild(input);

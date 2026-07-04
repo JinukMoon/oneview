@@ -1,13 +1,26 @@
+/* OneView — app UI in the OpenAI design language.
+ * Pure-white canvas, achromatic chrome (black + grays only), color arrives only
+ * through the documents themselves. Two radii: 9999px pills for interactive
+ * affordances, small near-square radius for surfaces. No accent color, no card
+ * shadows (separation via whitespace + hairline #e5e7eb borders), no border-left. */
 :root {
-  --bg: #0d1117;
-  --bg-elev: #161b22;
-  --bg-elev2: #21262d;
-  --border: #30363d;
-  --text: #e6edf3;
-  --text-dim: #8b949e;
-  --accent: #2f81f7;
-  --accent-soft: rgba(47, 129, 247, 0.15);
-  --danger: #f85149;
+  --bg: #ffffff;          /* canvas — absolute white */
+  --bg-elev: #ffffff;     /* bars sit on the same white; separated by hairline border */
+  --bg-elev2: #f7f7f8;    /* subtle off-white for input/tab fills */
+  --border: #e5e7eb;      /* the single divider/border color */
+  --text: #000000;        /* primary text — the one chromatic anchor */
+  --text-dim: #666666;    /* secondary text */
+  --text-faint: #8f8f8f;  /* tertiary/disabled */
+  --void: #000000;        /* filled CTA background */
+  --hover: #f1f1f1;       /* hover surface */
+  --chip: rgba(0,0,0,0.04);
+  --danger: #666666;      /* no red accent in this system; fall back to gray */
+
+  --radius-pill: 9999px;
+  --radius-surface: 6.08px;
+  --radius-soft: 40px;
+
+  --font: 'Inter', -apple-system, "Noto Sans KR", "Malgun Gothic", Roboto, sans-serif;
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -18,7 +31,9 @@ html, body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
-  font-family: -apple-system, "Noto Sans KR", "Malgun Gothic", Roboto, sans-serif;
+  font-family: var(--font);
+  font-feature-settings: "calt", "liga";
+  -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 
@@ -29,9 +44,9 @@ html, body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: env(safe-area-inset-top) 14px 0 14px;
-  height: calc(54px + env(safe-area-inset-top));
-  min-height: 54px;
+  padding: env(safe-area-inset-top) 16px 0 16px;
+  height: calc(56px + env(safe-area-inset-top));
+  min-height: 56px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -39,23 +54,27 @@ html, body {
 .topbar .title {
   font-size: 16px;
   font-weight: 600;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
   flex: 1;
 }
-.topbar .brand { color: var(--accent); font-weight: 700; }
+.topbar .brand { color: var(--text); font-weight: 600; }
 .iconbtn {
-  background: var(--bg-elev2);
+  background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 9px;
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   font-size: 14px;
+  font-weight: 500;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
-.iconbtn:active { background: var(--accent-soft); }
-.iconbtn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.iconbtn:hover { background: var(--hover); }
+.iconbtn:active { background: var(--hover); }
+.iconbtn.active { background: var(--void); color: #fff; border-color: var(--void); }
 
 /* ---- Viewer area ---- */
 #viewer {
@@ -65,79 +84,92 @@ html, body {
   position: relative;
 }
 
-/* PDF pages (lazy placeholders + rendered canvas) */
+/* PDF pages (lazy placeholders + rendered canvas) — separated by whitespace,
+   framed only by a hairline border (no drop shadow, per the flat philosophy). */
 .pdf-page-ph {
   display: block;
-  margin: 10px auto;
+  margin: 12px auto;
   background: #fff;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
 }
 .pdf-page { display: block; }
 
 /* HWP/HWPX pages rendered as vector SVG (via @rhwp/core) */
 .hwp-svg-page {
   display: block;
-  margin: 10px auto;
+  margin: 12px auto;
   background: #fff;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
-
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+  overflow: hidden;
 }
 .hwp-svg-page svg { width: 100%; height: auto; display: block; }
 
-/* fixed action bar (HWP/PPT "open in another app") — outside #content so it never zooms */
+/* fixed action bar ("open in another app") — outside #content so it never zooms */
 #actionbar {
-  padding: 8px 10px;
+  padding: 10px 12px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   text-align: center;
   flex-shrink: 0;
 }
 #actionbar .iconbtn {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--void);
+  border-color: var(--void);
   color: #fff;
-  font-weight: 600;
+  font-weight: 500;
   width: 100%;
   max-width: 480px;
+  border-radius: var(--radius-pill);
+  padding: 10px 16px;
 }
+#actionbar .iconbtn:hover { background: #000; opacity: 0.85; }
 
 /* dark reader — invert document colours for night reading */
 #content.dark-reader { filter: invert(1) hue-rotate(180deg); }
-/* re-invert embedded photos/figures so they keep true colours in dark reader */
 #content.dark-reader img { filter: invert(1) hue-rotate(180deg); }
-/* dark reader also re-inverts <image> inside SVG pages (HWP) so embedded photos keep true colours */
 #content.dark-reader svg image { filter: invert(1) hue-rotate(180deg); }
 
-/* PDF page indicator */
+/* PDF page indicator — white pill, hairline border, no heavy shadow */
 #pageind {
   position: fixed;
   bottom: calc(env(safe-area-inset-bottom) + 30px);
-  left: 14px;
-  background: rgba(22, 27, 34, 0.92);
+  left: 16px;
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(8px);
   border: 1px solid var(--border);
-  color: var(--text);
+  color: var(--text-dim);
   font-size: 12px;
-  padding: 5px 12px;
-  border-radius: 14px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
   z-index: 55;
   pointer-events: none;
 }
 
-/* recent files on landing */
-.recent-list { width: 100%; max-width: 340px; margin-top: 22px; text-align: left; }
-.recent-title { color: var(--text-dim); font-size: 13px; margin-bottom: 8px; }
-.recent-item {
-  display: flex; align-items: center; gap: 10px;
-  padding: 10px 12px; margin-bottom: 8px;
-  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px;
-  cursor: pointer;
+/* recent files on landing — flat rows, image-clip radius, no shadow */
+.recent-list { width: 100%; max-width: 360px; margin-top: 28px; text-align: left; }
+.recent-title {
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.011em;
+  margin-bottom: 10px;
 }
-.recent-item:active { background: var(--accent-soft); }
+.recent-item {
+  display: flex; align-items: center; gap: 12px;
+  padding: 12px 14px; margin-bottom: 8px;
+  background: #fff; border: 1px solid var(--border); border-radius: var(--radius-surface);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.recent-item:hover, .recent-item:active { background: var(--hover); }
 .ri-ext {
-  font-size: 11px; font-weight: 700; color: var(--accent);
-  background: var(--accent-soft); padding: 3px 6px; border-radius: 6px;
-  min-width: 44px; text-align: center; flex-shrink: 0;
+  font-size: 11px; font-weight: 600; color: var(--text-dim);
+  background: var(--chip); padding: 4px 8px; border-radius: var(--radius-pill);
+  min-width: 46px; text-align: center; flex-shrink: 0;
+  letter-spacing: 0.02em;
 }
 .ri-name { font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 
@@ -146,43 +178,52 @@ html, body {
   display: block;
   max-width: 100%;
   margin: 16px auto;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
 }
 
-/* word / excel rendered on white "paper" for readability */
+/* word / excel rendered on white "paper" */
 .doc-view, .sheet-view {
   background: #fff;
   color: #111;
-  margin: 10px auto;
-  padding: 18px 16px;
+  margin: 12px auto;
+  padding: 20px 18px;
   max-width: 900px;
-  border-radius: 6px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
   line-height: 1.6;
-  box-shadow: 0 2px 12px rgba(0,0,0,0.5);
   word-break: break-word;
 }
 .doc-view img { max-width: 100%; height: auto; }
 .doc-view table, .sheet-view table { border-collapse: collapse; width: 100%; font-size: 13px; }
 .doc-view td, .doc-view th,
-.sheet-view td, .sheet-view th { border: 1px solid #ccc; padding: 4px 8px; }
+.sheet-view td, .sheet-view th { border: 1px solid #e5e7eb; padding: 5px 8px; }
 .sheet-view td { white-space: nowrap; }
-.sheet-tabs { display: flex; gap: 6px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.sheet-tabs { display: flex; gap: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .sheet-tab-btn {
   flex: 0 0 auto;
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
+  background: var(--chip);
+  border: 1px solid transparent;
   color: var(--text);
-  border-radius: 8px;
-  padding: 7px 14px;
-  font-size: 13px;
+  border-radius: var(--radius-soft);
+  padding: 8px 16px;
+  font-size: 14px;
+  font-weight: 500;
   white-space: nowrap;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
-.sheet-tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-/* Self PPTX renderer: per-slide <canvas> stacked vertically; app-bg gaps. */
-#pptx-wrapper { margin: 10px auto; background: var(--bg); }
-.pptx-slide-canvas { background: #fff; }
-.hwpx-note { color: #888; font-size: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #eee; }
+.sheet-tab-btn:hover { background: var(--hover); }
+.sheet-tab-btn.active { background: var(--void); border-color: var(--void); color: #fff; }
+
+/* Self PPTX renderer: per-slide <canvas> stacked vertically */
+#pptx-wrapper { margin: 12px auto; background: var(--bg); }
+.pptx-slide-canvas {
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-surface);
+}
+.hwpx-note { color: var(--text-dim); font-size: 12px; margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
 
 /* docx-preview wrapper */
 .docx-wrap { display: flex; flex-direction: column; align-items: center; }
@@ -193,12 +234,12 @@ html, body {
   table-layout: fixed;
   background: #fff;
   color: #111;
-  font: 13px "Noto Sans KR", -apple-system, sans-serif;
+  font: 13px var(--font);
   margin: 0;
 }
 .xlsx-table td {
-  border: 1px solid #d9d9d9;       /* default gridlines */
-  padding: 2px 5px;
+  border: 1px solid #e5e7eb;
+  padding: 2px 6px;
   overflow: hidden;
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -208,10 +249,10 @@ html, body {
 .xlsx-table .xlsx-colh,
 .xlsx-table .xlsx-rowh,
 .xlsx-table .xlsx-corner {
-  background: #f3f3f3;
-  border: 1px solid #c6c6c6;
-  color: #5f6368;
-  font-weight: 400;
+  background: #f7f7f8;
+  border: 1px solid #e5e7eb;
+  color: var(--text-dim);
+  font-weight: 500;
   font-size: 11px;
   text-align: center;
   padding: 2px 4px;
@@ -221,8 +262,8 @@ html, body {
 #searchbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 10px;
+  gap: 8px;
+  padding: 10px 12px;
   background: var(--bg-elev);
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
@@ -230,35 +271,40 @@ html, body {
 #search-input {
   flex: 1;
   min-width: 0;
-  background: var(--bg-elev2);
+  background: transparent;
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: var(--radius-pill);
   color: var(--text);
-  padding: 8px 12px;
+  padding: 9px 16px;
   font-size: 15px;
+  font-family: var(--font);
 }
+#search-input::placeholder { color: var(--text-dim); }
 #search-count { font-size: 12px; color: var(--text-dim); min-width: 40px; text-align: center; }
 #searchbar .sbtn {
-  background: var(--bg-elev2);
+  background: transparent;
   border: 1px solid var(--border);
   color: var(--text);
-  border-radius: 8px;
-  width: 36px; height: 36px;
+  border-radius: var(--radius-pill);
+  width: 38px; height: 38px;
   font-size: 13px;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
-#searchbar .sbtn:active { background: var(--accent); }
-mark.jv-hl { background: #ffd24a; color: #000; border-radius: 2px; }
-mark.jv-hl-cur { background: #ff9500; color: #000; }
+#searchbar .sbtn:hover, #searchbar .sbtn:active { background: var(--hover); }
+/* search highlight — the one place a warm tint is allowed, for legibility */
+mark.jv-hl { background: #ffe08a; color: #000; border-radius: 2px; }
+mark.jv-hl-cur { background: #ffb020; color: #000; }
 
 /* text */
 .text-view {
   white-space: pre-wrap;
   word-break: break-word;
-  padding: 16px;
-  font-family: "Noto Sans KR", monospace;
+  padding: 18px;
+  font-family: var(--font);
   font-size: 14px;
   line-height: 1.6;
+  color: var(--text);
 }
 
 /* ---- Landing / empty ---- */
@@ -271,49 +317,53 @@ mark.jv-hl-cur { background: #ff9500; color: #000; }
   justify-content: center;
   text-align: center;
   padding: 24px;
-  gap: 16px;
+  gap: 20px;
   overflow-y: auto;
 }
-#landing { justify-content: flex-start; padding-top: 10vh; }
+#landing { justify-content: flex-start; padding-top: 12vh; }
 .logo {
-  font-size: 30px;
-  font-weight: 800;
-  letter-spacing: -0.5px;
+  font-size: 48px;
+  font-weight: 600;
+  letter-spacing: -1.44px;
+  line-height: 1.16;
 }
-.logo .v { color: var(--accent); }
-.sub { color: var(--text-dim); font-size: 14px; line-height: 1.5; max-width: 280px; }
+.logo .v { color: var(--text); }
+.sub { color: var(--text-dim); font-size: 16px; line-height: 1.55; max-width: 340px; }
 .bigbtn {
-  background: var(--accent);
+  background: var(--void);
   color: #fff;
   border: none;
-  border-radius: 12px;
-  padding: 14px 26px;
-  font-size: 16px;
-  font-weight: 600;
+  border-radius: var(--radius-pill);
+  padding: 13px 28px;
+  font-size: 15px;
+  font-weight: 500;
   cursor: pointer;
+  box-shadow: rgba(0,0,0,0.02) 0 4px 6px, rgba(0,0,0,0.05) 0 0 2px;
+  transition: opacity 0.15s ease;
 }
-.bigbtn:active { opacity: 0.85; }
+.bigbtn:hover { opacity: 0.85; }
+.bigbtn:active { opacity: 0.8; }
 
 /* ---- Forward / fallback card ---- */
 .card {
-  background: var(--bg-elev);
+  background: #fff;
   border: 1px solid var(--border);
-  border-radius: 14px;
-  padding: 22px;
-  max-width: 320px;
+  border-radius: var(--radius-surface);
+  padding: 24px;
+  max-width: 340px;
   display: flex;
   flex-direction: column;
   gap: 14px;
   align-items: center;
 }
-.card .fname { font-weight: 600; word-break: break-all; }
+.card .fname { font-weight: 600; word-break: break-all; letter-spacing: -0.01em; }
 .card .ftype { color: var(--text-dim); font-size: 13px; }
 
 /* ---- Loading ---- */
 .spinner {
   width: 34px; height: 34px;
   border: 3px solid var(--border);
-  border-top-color: var(--accent);
+  border-top-color: var(--void);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 }
@@ -321,7 +371,7 @@ mark.jv-hl-cur { background: #ff9500; color: #000; }
 
 .hidden { display: none !important; }
 
-/* zoom control (floating, content-only zoom) */
+/* zoom control (floating, content-only zoom) — white pill, hairline border */
 #zoomctl {
   position: fixed;
   right: 12px;
@@ -329,42 +379,43 @@ mark.jv-hl-cur { background: #ff9500; color: #000; }
   display: flex;
   align-items: center;
   gap: 6px;
-  background: rgba(22, 27, 34, 0.92);
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: saturate(180%) blur(8px);
   border: 1px solid var(--border);
-  border-radius: 24px;
+  border-radius: var(--radius-pill);
   padding: 5px 8px;
   z-index: 60;
-  box-shadow: 0 2px 10px rgba(0,0,0,0.5);
 }
 #zoomctl button {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: none;
-  background: var(--bg-elev2);
+  border: 1px solid var(--border);
+  background: #fff;
   color: var(--text);
   font-size: 19px;
   line-height: 1;
   cursor: pointer;
+  transition: background 0.15s ease;
 }
-#zoomctl button:active { background: var(--accent); }
+#zoomctl button:hover, #zoomctl button:active { background: var(--hover); }
 #zoom-pct {
   min-width: 44px;
   text-align: center;
   font-size: 13px;
+  font-weight: 500;
   color: var(--text-dim);
 }
 
-/* toast */
+/* toast — dark pill on the white canvas for contrast */
 #toast {
   position: fixed;
   bottom: 30px; left: 50%;
   transform: translateX(-50%);
-  background: var(--bg-elev2);
-  border: 1px solid var(--border);
-  color: var(--text);
-  padding: 10px 18px;
-  border-radius: 10px;
+  background: var(--void);
+  color: #fff;
+  padding: 11px 20px;
+  border-radius: var(--radius-pill);
   font-size: 14px;
   opacity: 0;
   transition: opacity 0.25s;
