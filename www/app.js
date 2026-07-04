@@ -60,7 +60,28 @@
     clearTimeout(qualityTimer);
     qualityTimer = setTimeout(() => { try { if (pdfRerender) pdfRerender(); if (hwpRerender) hwpRerender(); if (pptxRerender) pptxRerender(); } catch (e) {} }, 200);
   }
-  function setZoom(z) { zoom = clampZoom(z); applyZoom(); scheduleQualityRerender(); }
+  // Zoom around the current viewport center (or an explicit pinch focal point)
+  // instead of the top-left. CSS `zoom` scales the content's layout box, so the
+  // scroll offset that keeps a document point fixed scales by the zoom ratio:
+  //   newScroll = (oldScroll + focal) * (zNew / zOld) - focal
+  // Symmetric: zoom-in and zoom-out both keep the focal point fixed.
+  function setZoom(z, focalClientX, focalClientY) {
+    const zNew = clampZoom(z);
+    const zOld = zoom;
+    if (zNew === zOld) { if (zoomPct) zoomPct.textContent = Math.round(zNew * 100) + '%'; return; }
+    const vp = $('viewer');
+    const rect = vp.getBoundingClientRect();
+    const fx = (focalClientX != null ? focalClientX : rect.left + rect.width / 2) - rect.left;
+    const fy = (focalClientY != null ? focalClientY : rect.top + rect.height / 2) - rect.top;
+    const ratio = zNew / zOld;
+    const newLeft = (vp.scrollLeft + fx) * ratio - fx;
+    const newTop = (vp.scrollTop + fy) * ratio - fy;
+    zoom = zNew;
+    applyZoom();
+    vp.scrollLeft = Math.max(0, newLeft);
+    vp.scrollTop = Math.max(0, newTop);
+    scheduleQualityRerender();
+  }
 
   // --- dark reader (invert document colors for night reading) ---
   let darkReader = false;
@@ -783,7 +804,14 @@
         const os = Math.min(6, maxOsBudget, Math.max(base, Math.ceil(base * zoom)));
         if (os === host._os) return;
         host._os = os;
+        // Preserve scroll position across the quality re-render: renderInto swaps
+        // all slide canvases, and the momentary reflow can otherwise jump the view.
+        const vp = $('viewer');
+        const savedTop = vp.scrollTop, savedLeft = vp.scrollLeft;
         await window.JVPptx.renderInto(host, model, { width: w, oversample: os });
+        if (seq !== openSeq) return;
+        vp.scrollTop = savedTop;
+        vp.scrollLeft = savedLeft;
       };
       try {
         const appBg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim() || '#0d1117';
@@ -979,7 +1007,10 @@
     if (pinching && e.touches.length === 2) {
       e.preventDefault();
       const d = touchDist(e.touches);
-      if (pinchDist > 0) setZoom(pinchZoom * (d / pinchDist));
+      if (pinchDist > 0) {
+        const t = e.touches;
+        setZoom(pinchZoom * (d / pinchDist), (t[0].clientX + t[1].clientX) / 2, (t[0].clientY + t[1].clientY) / 2);
+      }
     }
   }, { passive: false });
   viewerEl.addEventListener('touchend', (e) => { if (e.touches.length < 2) pinching = false; }, { passive: true });

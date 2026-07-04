@@ -96,7 +96,7 @@ function tokenize(text) {
 
 // Collect the ordered run text/break sequence of a paragraph.
 // <a:r> → text run; <a:br/> → hard break; <a:fld> → its <a:t> text.
-function paragraphRuns(pEl) {
+function paragraphRuns(pEl, fldCtx) {
   const runs = [];
   for (let c = pEl.firstElementChild; c; c = c.nextElementSibling) {
     const name = c.localName;
@@ -107,7 +107,18 @@ function paragraphRuns(pEl) {
       runs.push({ br: true });
     } else if (name === 'fld') {
       const t = childByLocal(c, 't');
-      if (t) runs.push({ br: false, rPr: childByLocal(c, 'rPr'), text: t.textContent });
+      // PowerPoint stores dynamic fields (slide number, slide count) as an <a:fld>
+      // whose cached <a:t> text is a stale placeholder ("#" for a brand-new field).
+      // Resolve known field types to their live value so headers show "3", not "#".
+      const type = c.getAttribute('type') || '';
+      let text = t ? t.textContent : '';
+      if (fldCtx) {
+        if (type === 'slidenum' && fldCtx.slideNum != null) text = String(fldCtx.slideNum);
+        else if (type === 'slidecount' && fldCtx.slideCount != null) text = String(fldCtx.slideCount);
+      }
+      // If a slidenum field somehow still carries a literal "#", swap it too.
+      if (type === 'slidenum' && fldCtx && fldCtx.slideNum != null && (text === '#' || text === '')) text = String(fldCtx.slideNum);
+      runs.push({ br: false, rPr: childByLocal(c, 'rPr'), text });
     }
   }
   return runs;
@@ -137,7 +148,9 @@ export function drawText(ctx, txBodyEl, box, styleCtx) {
     styleChain = [], masterTxStyle = null,
     themeColors = {}, defaultFontPt = 18,
     insetsPx = null, anchorOverride = null,
+    slideNum = null, slideCount = null,
   } = styleCtx || {};
+  const fldCtx = { slideNum, slideCount };
 
   const paras = childrenByLocal(txBodyEl, 'p');
   if (!paras.length) return;
@@ -192,7 +205,7 @@ export function drawText(ctx, txBodyEl, box, styleCtx) {
       line = { pieces: [], width: 0, maxPx: paraDefFmt.px, algn, marL };
     };
 
-    const runs = paragraphRuns(pEl);
+    const runs = paragraphRuns(pEl, fldCtx);
     for (const run of runs) {
       if (run.br) { flush(true); continue; }
       if (!run.text) continue;

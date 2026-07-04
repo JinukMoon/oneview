@@ -100,6 +100,8 @@ export function drawShape(ctx, el, pxBox) {
       phType: el.ph ? el.ph.type : '',
       themeColors: el.themeColors || {},
       defaultFontPt: 18,
+      slideNum: el.slideNum,
+      slideCount: el.slideCount,
     });
   }
 }

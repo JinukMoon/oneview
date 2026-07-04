@@ -56,13 +56,24 @@ function downscaleImage(img) {
 export async function renderInto(host, model, opts = {}) {
   const cssWidth = opts.width || 960;
   const oversample = opts.oversample || 3;
-  host.innerHTML = '';
+  // Generation guard: a re-render (e.g. zoom quality pass) that starts while an
+  // earlier async render is still awaiting must supersede it. Without this, two
+  // interleaved passes append canvases out of order → scrambled/duplicated slides
+  // on repeated zoom. Each pass tags host.__renderGen; a stale pass aborts before
+  // mutating the DOM, and only the latest pass swaps its finished canvases in.
+  const gen = (host.__renderGen || 0) + 1;
+  host.__renderGen = gen;
+  const slideCount = model.slides.length;
+  let slideNum = 0;
+  const canvases = [];
   for (const slide of model.slides) {
+    slideNum++;
     const { canvas, ctx, box } = renderSlideCanvas(slide, cssWidth, oversample);
     // Background (slide → layout → master inheritance).
     try {
       const bg = resolveSlideBackground(slide, model.zip);
       const bgImg = bg && bg.type === 'image' ? await loadImage(bg.dataUrl) : null;
+      if (host.__renderGen !== gen) return 0; // superseded by a newer render
       paintBackground(ctx, bg, box, bgImg);
     } catch (e) { /* keep white base on background failure */ }
     // Draw order reproduces PowerPoint stacking: master decorations → layout
@@ -70,31 +81,38 @@ export async function renderInto(host, model, opts = {}) {
     const rels = slide.rels || {};
     const xml = slide.xml || {};
     const masterEls = extractLayerShapes(xml.master, slide, xml.layout, xml.master);
-    for (const el of masterEls) attachEnv(el, slide, model, rels.master, 'ppt/slideMasters');
+    for (const el of masterEls) attachEnv(el, slide, model, rels.master, 'ppt/slideMasters', slideNum, slideCount);
     const layoutEls = extractLayerShapes(xml.layout, slide, xml.layout, xml.master);
-    for (const el of layoutEls) attachEnv(el, slide, model, rels.layout, 'ppt/slideLayouts');
+    for (const el of layoutEls) attachEnv(el, slide, model, rels.layout, 'ppt/slideLayouts', slideNum, slideCount);
     const els = extractSlideElements(slide);
-    for (const el of els) attachEnv(el, slide, model, rels.slide, 'ppt/slides');
+    for (const el of els) attachEnv(el, slide, model, rels.slide, 'ppt/slides', slideNum, slideCount);
     // Pre-decode pic images (async) for every layer before the sync draw pass.
     await decodePicImages([...masterEls, ...layoutEls, ...els]);
+    if (host.__renderGen !== gen) return 0; // superseded by a newer render
     drawElements(ctx, masterEls);
     drawElements(ctx, layoutEls);
     drawElements(ctx, els);
     canvas.className = 'pptx-slide-canvas';
     canvas.style.display = 'block';
     canvas.style.margin = '0 auto 12px';
-    host.appendChild(canvas);
+    canvases.push(canvas);
   }
+  if (host.__renderGen !== gen) return 0; // superseded before commit
+  // Commit atomically: replace all children in one shot, preserving slide order.
+  host.innerHTML = '';
+  for (const c of canvases) host.appendChild(c);
   return model.slides.length;
 }
 
 // Attach media-resolution context (zip + slide rels + part dir) to an element
 // and its group children so shape/image fills can resolve embedded media.
-function attachEnv(el, slide, model, relsMap, partDir) {
+function attachEnv(el, slide, model, relsMap, partDir, slideNum, slideCount) {
   el.zip = model.zip;
   el.relsMap = relsMap || {};
   el.partDir = partDir || 'ppt/slides';
-  if (el.children) for (const c of el.children) attachEnv(c, slide, model, relsMap, partDir);
+  el.slideNum = slideNum;
+  el.slideCount = slideCount;
+  if (el.children) for (const c of el.children) attachEnv(c, slide, model, relsMap, partDir, slideNum, slideCount);
 }
 
 // Resolve + decode every pic element's embedded image (recursively through groups)
