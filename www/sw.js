@@ -13,7 +13,7 @@
  */
 'use strict';
 
-var CACHE_VERSION = 'oneview-v1';
+var CACHE_VERSION = 'oneview-v2'; // bumped: app moved to /app/ subpath; purge old caches
 var PRECACHE = CACHE_VERSION + '-shell';
 var RUNTIME = CACHE_VERSION + '-vendor';
 

@@ -30,13 +30,30 @@ if (!fs.existsSync(vendorBundle)) {
 fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
-// Copy the entire www/ tree (html, css, app.js, web-shim.js, sw.js, manifest,
-// icon, vendor/*). Everything here is static and browser-safe.
-fs.cpSync(www, out, { recursive: true });
+// Layout on Pages:
+//   dist-web/            → landing/showcase (index.html + logo) at the site root
+//   dist-web/app/        → the document-viewer PWA (its own index.html/app.js/sw.js)
+// The showcase's "웹앱 열기" links point to ./app/ so they resolve under any subpath.
+const app = path.join(out, 'app');
+fs.mkdirSync(app, { recursive: true });
+
+// 1) Copy the full www/ tree into dist-web/app/ (html, css, app.js, web-shim.js,
+//    sw.js, manifest, icon, vendor/*). Everything here is static and browser-safe.
+fs.cpSync(www, app, { recursive: true });
 
 // Drop local QA / dev-only files that live under www/ but must not ship to Pages.
 for (const junk of ['rendertest.html', '_hwp', '_testfiles']) {
-  fs.rmSync(path.join(out, junk), { recursive: true, force: true });
+  fs.rmSync(path.join(app, junk), { recursive: true, force: true });
+}
+
+// 2) Copy the landing/showcase into dist-web/ root (becomes the site homepage).
+const landing = path.join(__dirname, 'landing');
+if (fs.existsSync(landing)) {
+  fs.cpSync(landing, out, { recursive: true });
+} else {
+  console.warn('landing/ not found — deploying app-only build at root.');
+  fs.cpSync(app, out, { recursive: true });
+  fs.rmSync(app, { recursive: true, force: true });
 }
 
 // GitHub Pages serves from a project subpath (user.github.io/<repo>/). Relative

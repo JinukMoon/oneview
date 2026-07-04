@@ -16,7 +16,7 @@
 ## 📥 사용하기
 
 **🌐 웹앱(설치 없이 바로): [jinukmoon.github.io/oneview](https://jinukmoon.github.io/oneview/)**
-폰·PC 브라우저에서 위 주소를 열면 바로 실행됩니다. 홈 화면에 추가하면 앱처럼 오프라인으로도 씁니다(안드로이드 Chrome은 "앱 설치" 안내, iOS는 Safari 공유 → 홈 화면에 추가).
+소개 페이지에서 **웹앱 열기**를 누르면 바로 실행됩니다(앱 직링크: [/oneview/app/](https://jinukmoon.github.io/oneview/app/)). 홈 화면에 추가하면 앱처럼 오프라인으로도 씁니다(안드로이드 Chrome은 "앱 설치" 안내, iOS는 Safari 공유 → 홈 화면에 추가).
 
 **📱 Android 앱(APK): [OneView.apk 받기 (항상 최신)](https://github.com/JinukMoon/oneview/releases/latest/download/OneView.apk)**
 폰에서 위 링크를 누르면 APK가 바로 받아집니다. 설치 시 **"출처를 알 수 없는 앱 허용"** 을 한 번 켜 주세요. (Android 13/14 기준)
