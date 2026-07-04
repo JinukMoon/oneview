@@ -147,10 +147,33 @@
   // App plugin (hardware back button) — harmless no-op on web; browser back still works.
   window.JVApp = window.JVCapacitor.Plugins.App;
 
-  // --- PWA: register the service worker for offline / installability ---
+  // --- PWA: register the service worker + auto-update on new deploys ---
+  // When a new SW version ships, it skipWaiting()s and activates; we reload once so
+  // the freshest UI/assets are shown immediately instead of after a manual refresh.
   if ('serviceWorker' in navigator) {
+    var reloadedForSW = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function () {
+      // A new SW took control — reload once to pick up the new cached shell.
+      if (reloadedForSW) return;
+      reloadedForSW = true;
+      window.location.reload();
+    });
     window.addEventListener('load', function () {
-      navigator.serviceWorker.register('./sw.js').catch(function () {});
+      navigator.serviceWorker.register('./sw.js').then(function (reg) {
+        // Proactively check for an update on every load.
+        try { reg.update(); } catch (e) {}
+        reg.addEventListener('updatefound', function () {
+          var nw = reg.installing;
+          if (!nw) return;
+          nw.addEventListener('statechange', function () {
+            // New worker installed while an old one still controls the page →
+            // it will skipWaiting/activate and trigger controllerchange above.
+            if (nw.state === 'installed' && navigator.serviceWorker.controller) {
+              // no-op: controllerchange handler performs the single reload
+            }
+          });
+        });
+      }).catch(function () {});
     });
   }
 
