@@ -1,0 +1,26 @@
+{
+  "name": "OneView",
+  "short_name": "OneView",
+  "description": "PDF · 한글(HWP/HWPX) · Word · Excel · PPT · 이미지를 앱 하나로 바로 여는 무료 문서 뷰어.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "icons": [
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

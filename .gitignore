@@ -4,6 +4,9 @@ node_modules/
 # generated web bundles (run `node build.mjs` to regenerate)
 www/vendor/
 
+# generated web/PWA build (run `node build-web.mjs`; CI deploys it to Pages)
+dist-web/
+
 # Capacitor-synced copies (run `npx cap copy android` to regenerate)
 android/app/src/main/assets/public/
 android/app/src/main/assets/capacitor.config.json

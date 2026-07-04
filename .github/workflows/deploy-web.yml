@@ -1,0 +1,62 @@
+name: Deploy OneView web (GitHub Pages)
+
+# Builds the static PWA (dist-web/) and publishes it to GitHub Pages.
+# The same www/ assets power the Android app; this only ships the browser build.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'www/**'
+      - 'src/**'
+      - 'build.mjs'
+      - 'build-web.mjs'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/deploy-web.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow one concurrent deployment; newer pushes cancel in-progress runs.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Build vendor bundle + web dist
+        run: |
+          node build.mjs
+          node build-web.mjs
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist-web
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

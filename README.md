@@ -79,6 +79,31 @@ cd android && ./gradlew assembleDebug
 
 `www/`(HTML·CSS·JS)만 고쳤다면 `node build.mjs`는 생략하고 `npx cap copy android` 후 다시 빌드하면 됩니다.
 
+### 웹앱 / PWA (GitHub Pages)
+
+같은 `www/` 자산으로 **브라우저에서 도는 웹앱(PWA)** 도 빌드합니다. 안드로이드 앱과 코드를 공유하며(`app.js`는 그대로), 네이티브 `FileBridge`가 없는 브라우저에서는 `www/web-shim.js`가 자동으로 웹용 파일 접근을 제공합니다.
+
+```bash
+npm install
+node build.mjs        # 뷰어 라이브러리 번들 (최초 1회 / 라이브러리 변경 시)
+node build-web.mjs    # www/ → dist-web/ (정적 PWA 산출물)
+```
+
+`dist-web/`를 GitHub Pages에 올리면 끝입니다. `main`에 push하면 `.github/workflows/deploy-web.yml`이 자동으로 빌드·배포합니다(리포지토리 **Settings → Pages → Source: GitHub Actions** 설정 필요).
+
+**웹앱에서 되는 것**
+
+- 파일 선택(＋ / 파일 열기) → 휴대폰·iCloud·클라우드에서 문서 선택 후 인앱 렌더(PDF/HWP/Word/Excel/PPT/이미지/텍스트).
+- **오프라인 동작 + 홈 화면 설치**(PWA): 안드로이드 Chrome은 "앱 설치" 자동 안내, iOS는 Safari **공유 → 홈 화면에 추가**.
+- 공유는 `navigator.share`(Web Share), 미지원 시 다운로드로 폴백.
+
+**웹앱에서 안 되는 것 (네이티브 앱 전용)**
+
+- **카톡·메일에서 파일을 눌러 자동으로 OneView에서 열기** — OS 인텐트/공유 대상은 설치된 네이티브 앱만 등록되며, 웹 표준으로는 불가(특히 iOS).
+- 스토리지 전체 자동 스캔 — 브라우저 보안상 "사용자가 고른 파일"만 접근합니다(앱도 사용자 선택 기반).
+
+**캐시 안전성** — 문서 데이터는 `blob:` URL + `cache: 'no-store'`로 처리되고 다음 문서를 열 때 `URL.revokeObjectURL`로 즉시 해제됩니다. 서비스 워커(`www/sw.js`)는 **앱 껍데기와 `/vendor/` 정적 자산만** 캐시(화이트리스트)하고 사용자 문서는 절대 캐시하지 않으며, 배포 시 `CACHE_VERSION`이 바뀌면 옛 캐시를 삭제합니다 → 캐시 무한 증식 없음.
+
 ---
 
 ## 🛠 자체 PPTX 렌더러 (직접 만든 부분)
