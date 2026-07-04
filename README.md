@@ -1,10 +1,10 @@
 <div align="center">
   <img src="assets/oneview_logo.png" width="150" alt="OneView" />
   <h1>OneView</h1>
-  <p><b>PDF · 한글(HWP/HWPX) · Word · Excel · PPT · 이미지</b>를<br>광고 없이 앱 하나로 바로 여는 무료 Android 문서 뷰어.</p>
+  <p><b>PDF · 한글(HWP/HWPX) · Word · Excel · PPT · 이미지</b>를<br>광고 없이 바로 여는 무료 문서 뷰어. <b>Android 앱 + 웹앱(PWA)</b>.</p>
   <p><sub>PowerPoint는 외부 라이브러리 없이 <b>OOXML을 직접 파싱하는 자체 캔버스 렌더러</b>로 그립니다.</sub></p>
   <p>
-    <img alt="platform" src="https://img.shields.io/badge/platform-Android-3ddc84" />
+    <img alt="platform" src="https://img.shields.io/badge/platform-Android%20·%20Web(PWA)-3ddc84" />
     <img alt="price" src="https://img.shields.io/badge/무료-광고없음-2f81f7" />
     <img alt="offline" src="https://img.shields.io/badge/오프라인-서버없음-8b949e" />
     <img alt="license" src="https://img.shields.io/badge/license-MIT-blue" />
@@ -13,12 +13,14 @@
 
 ---
 
-## 📥 다운로드
+## 📥 사용하기
 
-**[➡️ OneView.apk 받기 (항상 최신)](https://github.com/JinukMoon/oneview/releases/latest/download/OneView.apk)**
+**🌐 웹앱(설치 없이 바로): [jinukmoon.github.io/oneview](https://jinukmoon.github.io/oneview/)**
+폰·PC 브라우저에서 위 주소를 열면 바로 실행됩니다. 홈 화면에 추가하면 앱처럼 오프라인으로도 씁니다(안드로이드 Chrome은 "앱 설치" 안내, iOS는 Safari 공유 → 홈 화면에 추가).
 
-폰에서 위 링크를 누르면 APK가 바로 받아집니다.
-설치 시 **"출처를 알 수 없는 앱 허용"** 을 한 번 켜 주세요. (Android 13/14 기준)
+**📱 Android 앱(APK): [OneView.apk 받기 (항상 최신)](https://github.com/JinukMoon/oneview/releases/latest/download/OneView.apk)**
+폰에서 위 링크를 누르면 APK가 바로 받아집니다. 설치 시 **"출처를 알 수 없는 앱 허용"** 을 한 번 켜 주세요. (Android 13/14 기준)
+앱은 웹앱과 달리 **카톡·메일에서 파일을 누르면 OneView가 후보로 떠서 바로 열립니다.**
 
 ---
 
