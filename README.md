@@ -2,6 +2,7 @@
   <img src="assets/oneview_logo.png" width="150" alt="OneView" />
   <h1>OneView</h1>
   <p><b>PDF · 한글(HWP/HWPX) · Word · Excel · PPT · 이미지</b>를<br>광고 없이 앱 하나로 바로 여는 무료 Android 문서 뷰어.</p>
+  <p><sub>PowerPoint는 외부 라이브러리 없이 <b>OOXML을 직접 파싱하는 자체 캔버스 렌더러</b>로 그립니다.</sub></p>
   <p>
     <img alt="platform" src="https://img.shields.io/badge/platform-Android-3ddc84" />
     <img alt="price" src="https://img.shields.io/badge/무료-광고없음-2f81f7" />
@@ -42,7 +43,7 @@ OneView는 **하나의 진입점**에서 대부분을 직접 열고, 직접 못 
 | **HWPX** (.hwpx) | 인앱 시각 렌더 (@rhwp/core, WASM) |
 | **Word** (.docx) | 인앱 렌더 · 표/스타일 유지 (docx-preview) |
 | **Excel** (.xlsx/.xls) | 인앱 표 렌더 · **시트 탭으로 전환** (ExcelJS, SheetJS 폴백) |
-| **PowerPoint** (.pptx) | 인앱 정적 미리보기 · **슬라이드 세로 스크롤** + PowerPoint로 넘기기 |
+| **PowerPoint** (.pptx) | **자체 제작 OOXML 렌더러**로 인앱 렌더 · 배경·도형·표·그룹·마스터/레이아웃까지 · **슬라이드 세로 스크롤** · 확대 시 고해상도 재렌더 |
 | **이미지** (jpg/png/gif/webp/svg …) | 인앱 렌더 |
 | **텍스트** (txt/csv/md/json/xml …) | 인앱 · 한글 인코딩 자동 감지(UTF-8/EUC-KR) |
 | 그 외 (.doc/.ppt/.rtf/.odf/.epub · HEIC/HEIF …) | 설치된 앱으로 자동 전달 |
@@ -51,7 +52,7 @@ OneView는 **하나의 진입점**에서 대부분을 직접 열고, 직접 못 
 
 ## 주요 기능
 
-- **📐 비율 그대로 확대/축소** — 핀치 + 버튼 줌(25%~600%). 가로·세로 균일 스케일이라 문서가 늘어나지 않고, 확대하면 가로 스크롤로 패닝됩니다.
+- **📐 화면 중앙 기준 확대/축소** — 핀치 + 버튼 줌(25%~600%). 보고 있던 지점을 기준으로 커지고 작아져서(핀치는 두 손가락 중앙 기준) 확대해도 위치가 튀지 않습니다.
 - **🔍 PDF는 확대할수록 선명** — 보는 배율에 맞춰 페이지를 다시 렌더링(메모리 상한 내). 페이지 크기가 섞인 문서(세로+가로)도 각자 비율 유지.
 - **🖼 슬라이드/페이지 세로 스크롤** — PPT는 슬라이드가 위→아래로 쭉, 아래로 넘기며 훑어볼 수 있습니다.
 - **📑 엑셀 시트 전환** — 상단 고정 탭 버튼으로 시트를 골라 이동.
@@ -80,6 +81,21 @@ cd android && ./gradlew assembleDebug
 
 ---
 
+## 🛠 자체 PPTX 렌더러 (직접 만든 부분)
+
+처음엔 오픈소스 PPTX 미리보기 라이브러리를 썼는데, **그룹(group) 안에 중첩된 도형의 좌표를 잘못 계산해 도형이 화면의 수백 배 크기로 폭발**하는 근본 버그가 있었습니다(EMU 단위를 값 크기로 추측하다 틀리는 문제). 라이브러리 소스는 비공개라 고칠 수도 없었습니다.
+
+그래서 **OOXML을 직접 파싱하는 경량 렌더러를 `src/pptx/`에 새로 만들었습니다:**
+
+- **정확한 좌표 변환** — EMU를 명시적으로 처리(추측 없음), group `chOff`/`chExt` 기반 중첩 좌표·회전·반전(affine)을 정확히 계산.
+- **배경 상속** — slide → layout → master 순서로 배경(단색·그라데이션·이미지·테마 참조 `bgRef`)을 해석.
+- **요소 렌더** — 도형(prstGeom)·텍스트(5단계 서식 상속 + 자동 줄바꿈)·이미지·표(셀 병합)·슬라이드 번호 필드.
+- **캔버스 방식** — PDF/HWP처럼 per-slide 캔버스로 그려 모바일 WebView의 레이어 합성 이슈(검은 화면)를 회피하고, 확대 시 고해상도로 다시 그려 선명하게.
+
+덕분에 기존 라이브러리가 못 그리던 **마스터/레이아웃 디자인(헤더 바·로고·배경)** 까지 제대로 나옵니다.
+
+---
+
 ## 기술 / 크레딧
 
 [Capacitor](https://capacitorjs.com) (WebView 래퍼) 위에서 순수 클라이언트 사이드로 동작하며, 아래 오픈소스 렌더러를 사용합니다:
@@ -89,15 +105,16 @@ cd android && ./gradlew assembleDebug
 [docx-preview](https://github.com/VolodymyrBaydalka/docxjs) ·
 [ExcelJS](https://github.com/exceljs/exceljs) ·
 [SheetJS](https://github.com/SheetJS/sheetjs) ·
-[pptx-preview](https://github.com/501351981/pptx-preview) ·
 [fflate](https://github.com/101arrowz/fflate).
+
+**PowerPoint 렌더러(`src/pptx/`)는 직접 구현했습니다** — 외부 PPTX 라이브러리를 쓰지 않고 OOXML(`.pptx`)을 직접 파싱해 캔버스로 그립니다. (아래 "자체 PPTX 렌더러" 참고)
 
 ---
 
 ## 한계
 
 - **HWP/HWPX** — @rhwp/core로 시각 렌더하지만, 복잡하거나 암호화·배포용 문서는 일부 깨지거나 표시가 안 될 수 있습니다(이 경우 한컴 등 다른 앱으로 넘깁니다).
-- **PPT** — 정적 미리보기입니다. 애니메이션·슬라이드쇼는 PowerPoint 앱으로 넘깁니다(해당 엔진은 오픈소스로 재현 불가). 매우 큰 덱은 느릴 수 있어 상단 버튼으로 PowerPoint에 넘길 수 있습니다.
+- **PPT** — 자체 렌더러로 배경·도형·표·이미지·마스터/레이아웃을 그립니다. 다만 **차트·SmartArt·애니메이션·슬라이드쇼는 렌더하지 않습니다**(상단 버튼으로 PowerPoint 앱에 넘깁니다). 매우 특수한 도형·서식은 근사해서 원본과 미묘하게 다를 수 있습니다.
 - **PDF** — 벡터 원본이 아니라 배율별 래스터 렌더입니다(무한 확대 시 완벽한 벡터 선명함은 네이티브 PDF 엔진에서만 가능).
 - **HEIC/HEIF** — WebView가 직접 디코드하지 못해 사진 앱으로 넘깁니다.
 - 개인용으로 만든 프로젝트입니다. 복잡한 문서는 일부 깨질 수 있습니다.
